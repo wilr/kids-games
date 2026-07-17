@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kids Games</title>
+  <style>
+    :root {
+      --ink: #1a2744;
+      --sky: #6ec6e0;
+      --cream: #fff7ec;
+      --accent: #ffd35a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 2rem;
+      font-family: "Segoe UI", "Trebuchet MS", sans-serif;
+      color: var(--cream);
+      background:
+        radial-gradient(ellipse 80% 60% at 20% 10%, #1b3a5c 0%, transparent 55%),
+        radial-gradient(ellipse 70% 50% at 90% 80%, #243b55 0%, transparent 50%),
+        #0d1b2a;
+    }
+    main { width: min(28rem, 100%); text-align: center; }
+    h1 {
+      margin: 0 0 0.35rem;
+      font-size: clamp(2rem, 6vw, 2.75rem);
+      letter-spacing: 0.02em;
+    }
+    p {
+      margin: 0 0 1.75rem;
+      color: #bfe8ff;
+      line-height: 1.45;
+    }
+    a.game {
+      display: block;
+      padding: 1.1rem 1.25rem;
+      border-radius: 12px;
+      background: linear-gradient(180deg, var(--sky), #4aa8c8);
+      color: var(--ink);
+      font-weight: 700;
+      font-size: 1.15rem;
+      text-decoration: none;
+      box-shadow: 0 8px 0 #2f7a94;
+      transition: transform 0.12s ease, box-shadow 0.12s ease;
+    }
+    a.game:hover {
+      transform: translateY(2px);
+      box-shadow: 0 6px 0 #2f7a94;
+    }
+    a.game:active {
+      transform: translateY(6px);
+      box-shadow: 0 2px 0 #2f7a94;
+    }
+    a.game span {
+      display: block;
+      margin-top: 0.25rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #1a4060;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Kids Games</h1>
+    <p>School holiday experiments — HTML &amp; JavaScript games.</p>
+    <a class="game" href="parkour.html">
+      Chicken Parkour
+      <span>Tap / click to jump · desktop or phone</span>
+    </a>
+  </main>
+</body>
+</html>
