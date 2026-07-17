@@ -1,0 +1,1887 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Help the Animals</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%; overflow: hidden;
+    background: #10151c;
+    font-family: 'Trebuchet MS', 'Segoe UI', sans-serif;
+    user-select: none; -webkit-user-select: none;
+    touch-action: none;
+  }
+  #stageWrap {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  canvas { display: block; touch-action: none; border-radius: 6px; }
+
+  /* ---------- Modal system ---------- */
+  .veil {
+    position: fixed; inset: 0; z-index: 20;
+    background: rgba(8, 14, 20, 0.72);
+    backdrop-filter: blur(3px);
+    display: none; align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .veil.on { display: flex; }
+  .card {
+    background: linear-gradient(180deg, #FFFDF6 0%, #FFF3DC 100%);
+    border: 4px solid #C98A3E;
+    border-radius: 22px;
+    box-shadow: 0 18px 50px rgba(0,0,0,0.55);
+    padding: 26px 30px;
+    max-width: 460px; width: 100%;
+    text-align: center;
+    color: #4A3220;
+    animation: pop 0.25s cubic-bezier(0.2, 1.4, 0.5, 1);
+    max-height: 92vh; overflow-y: auto;
+  }
+  .card.wide { max-width: 720px; }
+  @keyframes pop { from { transform: scale(0.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+  .card h2 { margin: 0 0 6px; font-size: 27px; color: #A6521C; }
+  .card p  { margin: 0 0 16px; font-size: 15px; line-height: 1.5; color: #6B4C31; }
+
+  .card input[type=text] {
+    width: 100%; box-sizing: border-box;
+    padding: 13px 15px; font-size: 19px;
+    font-family: inherit; text-align: center;
+    border: 3px solid #E0B579; border-radius: 13px;
+    background: #FFF; color: #4A3220; outline: none;
+    margin-bottom: 16px;
+  }
+  .card input[type=text]:focus { border-color: #E9922F; box-shadow: 0 0 0 4px rgba(233,146,47,0.2); }
+
+  .btnRow { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  button.b {
+    font-family: inherit; font-size: 16px; font-weight: bold;
+    padding: 12px 20px; border-radius: 13px; cursor: pointer;
+    border: none; border-bottom: 4px solid rgba(0,0,0,0.25);
+    background: #E9922F; color: #fff;
+    transition: transform 0.08s, filter 0.15s;
+  }
+  button.b:hover { filter: brightness(1.08); }
+  button.b:active { transform: translateY(3px); border-bottom-width: 1px; }
+  button.b.green { background: #4CA653; }
+  button.b.grey  { background: #96876F; }
+  button.b.red   { background: #C4553D; }
+  button.b:disabled { opacity: 0.45; cursor: default; }
+
+  #photoFrame {
+    background: #fff; border: 1px solid #E3D4B8;
+    padding: 9px 9px 34px; border-radius: 4px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.22);
+    display: inline-block; position: relative;
+    transform: rotate(-1.5deg); margin-bottom: 18px;
+  }
+  #photoFrame img, #photoFrame .empty {
+    display: block; width: 330px; height: 220px;
+    max-width: 100%;
+    border-radius: 2px; background: #E7E0D2;
+  }
+  #photoFrame .empty {
+    display: flex; align-items: center; justify-content: center;
+    color: #A79A85; font-size: 14px;
+  }
+  #photoFrame .cap {
+    position: absolute; bottom: 8px; left: 0; right: 0;
+    font-size: 13px; color: #8A7A62; font-style: italic;
+  }
+  #flash {
+    position: fixed; inset: 0; background: #fff; opacity: 0;
+    pointer-events: none; z-index: 40;
+  }
+  #flash.go { animation: fl 0.45s ease-out; }
+  @keyframes fl { 0% { opacity: 0.95; } 100% { opacity: 0; } }
+
+  #journalGrid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 14px; margin: 6px 0 20px; text-align: left;
+  }
+  .jEntry {
+    background: #fff; border: 1px solid #E3D4B8; border-radius: 4px;
+    padding: 6px 6px 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.16);
+  }
+  .jEntry img, .jEntry .noPic {
+    width: 100%; aspect-ratio: 3/2; border-radius: 2px;
+    object-fit: cover; display: block; background: #EFE8DA;
+  }
+  .jEntry .noPic { display: flex; align-items: center; justify-content: center; font-size: 34px; }
+  .jEntry b  { display: block; font-size: 14px; margin-top: 6px; color: #A6521C; }
+  .jEntry em { display: block; font-size: 11px; color: #8A7A62; font-style: normal; }
+  .empJ { color: #8A7A62; font-size: 15px; padding: 26px 0; }
+  .loadErr { color: #FFD3C4; font-family: monospace; text-align: center; padding-top: 40vh; }
+</style>
+</head>
+<body>
+
+<div id="stageWrap"></div>
+<div id="flash"></div>
+
+<!-- Name entry -->
+<div class="veil" id="mName">
+  <div class="card">
+    <h2>Welcome, animal helper!</h2>
+    <p>What should we call you in the journal?</p>
+    <input type="text" id="nameInput" maxlength="16" placeholder="Your name" autocomplete="off">
+    <div class="btnRow">
+      <button class="b green" id="nameGo">Let's go! 🐾</button>
+      <button class="b grey" id="nameBack">Back</button>
+    </div>
+  </div>
+</div>
+
+<!-- Animal saved -->
+<div class="veil" id="mSaved">
+  <div class="card">
+    <h2 id="savedTitle">🎉 Animal Saved!</h2>
+    <p id="savedText"></p>
+    <div id="photoFrame">
+      <div class="empty" id="photoEmpty">Ready for a photo…</div>
+      <img id="photoImg" style="display:none" alt="Journal photo">
+      <div class="cap" id="photoCap"></div>
+    </div>
+    <div class="btnRow" id="savedBtns"></div>
+  </div>
+</div>
+
+<!-- Unlock -->
+<div class="veil" id="mUnlock">
+  <div class="card">
+    <h2>🔓 New Friends Unlocked!</h2>
+    <p>You saved every wild animal, so the farm has asked for your help too.<br><br>
+       <span style="font-size:34px">🐴 🐔 🦆</span><br><br>
+       Horse, Chicken and Duck are now waiting for you!</p>
+    <div class="btnRow"><button class="b green" id="unlockOk">Wonderful!</button></div>
+  </div>
+</div>
+
+<!-- Journal -->
+<div class="veil" id="mJournal">
+  <div class="card wide">
+    <h2>📖 My Animal Journal</h2>
+    <p id="journalSub"></p>
+    <div id="journalGrid"></div>
+    <div class="btnRow"><button class="b" id="journalClose">Close</button></div>
+  </div>
+</div>
+
+<!-- New game confirm -->
+<div class="veil" id="mReset">
+  <div class="card">
+    <h2>Start a new game?</h2>
+    <p>This will erase your name, your saved animals and every photo in your journal. This cannot be undone.</p>
+    <div class="btnRow">
+      <button class="b red" id="resetYes">Yes, erase everything</button>
+      <button class="b grey" id="resetNo">Keep my progress</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.4.2/pixi.min.js"></script>
+<script>
+if (!window.PIXI) {
+  document.write('<scr' + 'ipt src="https://unpkg.com/pixi.js@7.4.2/dist/pixi.min.js"><\/scr' + 'ipt>');
+}
+</script>
+<script>
+(function () {
+'use strict';
+
+if (!window.PIXI) {
+  document.getElementById('stageWrap').innerHTML =
+    '<div class="loadErr">Could not load PixiJS.<br>This game needs an internet connection the first time it runs.</div>';
+  return;
+}
+
+/* ==================================================================
+   CONSTANTS
+   ================================================================== */
+const W = 960, H = 640;
+const START_HEALTH = 12, PER_PROBLEM = 13, PER_FOOD = 12;   // 12 + 4*13 + 3*12 = 100
+const TAPS_TO_FIX = 3;
+const SAVE_KEY = 'helpTheAnimals.save.v1';
+const EMOJI = "'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji',sans-serif";
+const FONT = "'Trebuchet MS','Segoe UI',sans-serif";
+
+/* ==================================================================
+   SAVE DATA
+   ================================================================== */
+const blankSave = () => ({ playerName: '', saved: [], journal: [] });
+let save = blankSave();
+
+function loadSave() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (raw) {
+      const d = JSON.parse(raw);
+      save = {
+        playerName: typeof d.playerName === 'string' ? d.playerName : '',
+        saved: Array.isArray(d.saved) ? d.saved : [],
+        journal: Array.isArray(d.journal) ? d.journal : []
+      };
+    }
+  } catch (e) { save = blankSave(); }
+}
+function writeSave() {
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); }
+  catch (e) {
+    // Storage full — most likely photos. Drop the oldest ones and retry once.
+    save.journal = save.journal.map(j => ({ ...j, photo: null }));
+    try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e2) {}
+  }
+}
+function isSaved(id) { return save.saved.indexOf(id) !== -1; }
+function wildAllSaved() { return ['tiger', 'dolphin', 'turtle'].every(isSaved); }
+loadSave();
+
+/* ==================================================================
+   SOUND (tiny WebAudio synth — no asset files)
+   ================================================================== */
+const Sound = (function () {
+  let ctx = null;
+  function ac() {
+    if (!ctx) { try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; } }
+    if (ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  }
+  function tone(freq, dur, type, vol, delay) {
+    const c = ac(); if (!c) return;
+    const t = c.currentTime + (delay || 0);
+    const o = c.createOscillator(), g = c.createGain();
+    o.type = type || 'sine';
+    o.frequency.setValueAtTime(freq, t);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol || 0.16, t + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(c.destination);
+    o.start(t); o.stop(t + dur + 0.03);
+  }
+  return {
+    tap:    () => tone(520, 0.08, 'triangle', 0.11),
+    heal:   () => { tone(660, 0.14, 'sine', 0.14, 0); tone(880, 0.2, 'sine', 0.12, 0.09); },
+    eat:    () => { tone(240, 0.09, 'square', 0.07, 0); tone(180, 0.1, 'square', 0.06, 0.08); },
+    nope:   () => tone(150, 0.13, 'sawtooth', 0.06),
+    click:  () => tone(760, 0.05, 'triangle', 0.09),
+    shutter:() => { tone(1400, 0.03, 'square', 0.08, 0); tone(700, 0.06, 'square', 0.06, 0.04); },
+    win:    () => [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.32, 'sine', 0.14, i * 0.11))
+  };
+})();
+
+/* ==================================================================
+   APP
+   ================================================================== */
+const app = new PIXI.Application({
+  width: W, height: H, antialias: true, backgroundColor: 0x0d1219
+});
+document.getElementById('stageWrap').appendChild(app.view);
+app.stage.eventMode = 'static';
+app.stage.hitArea = new PIXI.Rectangle(0, 0, W, H);
+
+function resize() {
+  const vw = window.innerWidth || document.documentElement.clientWidth;
+  const vh = window.innerHeight || document.documentElement.clientHeight;
+  // A viewport can legitimately report 0 before first layout; never scale to nothing.
+  if (!vw || !vh) return;
+  const s = Math.min(vw / W, vh / H);
+  app.view.style.width = Math.round(W * s) + 'px';
+  app.view.style.height = Math.round(H * s) + 'px';
+}
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', resize);
+if (window.ResizeObserver) new ResizeObserver(resize).observe(document.documentElement);
+resize();
+
+/* ==================================================================
+   SMALL HELPERS
+   ================================================================== */
+const lerp = (a, b, t) => a + (b - a) * t;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const dist = (ax, ay, bx, by) => Math.hypot(ax - bx, ay - by);
+
+function txt(str, size, fill, weight, family) {
+  return new PIXI.Text(str, {
+    fontFamily: family || FONT, fontSize: size, fill: fill,
+    fontWeight: weight || 'normal', align: 'center'
+  });
+}
+function emo(str, size) {
+  const t = new PIXI.Text(str, { fontFamily: EMOJI, fontSize: size, align: 'center' });
+  t.anchor.set(0.5);
+  return t;
+}
+
+function gradTex(stops) {
+  const cv = document.createElement('canvas');
+  cv.width = 4; cv.height = 256;
+  const c = cv.getContext('2d');
+  const g = c.createLinearGradient(0, 0, 0, 256);
+  stops.forEach(s => g.addColorStop(s[0], s[1]));
+  c.fillStyle = g; c.fillRect(0, 0, 4, 256);
+  return PIXI.Texture.from(cv);
+}
+
+function makeButton(label, w, h, color, onClick, opts) {
+  opts = opts || {};
+  const c = new PIXI.Container();
+  // The press offset moves `inner`, never `c` — callers own c.x/c.y.
+  const inner = new PIXI.Container();
+  c.addChild(inner);
+  const shadow = new PIXI.Graphics();
+  shadow.beginFill(0x000000, 0.28).drawRoundedRect(-w / 2, -h / 2 + 6, w, h, h / 3.2).endFill();
+  const g = new PIXI.Graphics();
+  g.beginFill(color).drawRoundedRect(-w / 2, -h / 2, w, h, h / 3.2).endFill();
+  g.beginFill(0xFFFFFF, 0.18).drawRoundedRect(-w / 2 + 5, -h / 2 + 4, w - 10, h * 0.38, h / 4).endFill();
+  const t = txt(label, opts.size || 21, 0xFFFFFF, 'bold');
+  t.anchor.set(0.5);
+  inner.addChild(shadow, g, t);
+  c.eventMode = 'static';
+  c.cursor = 'pointer';
+  c.hitArea = new PIXI.Rectangle(-w / 2, -h / 2, w, h);
+  c.on('pointerover', () => { c.scale.set(1.05); });
+  c.on('pointerout', () => { c.scale.set(1); inner.y = 0; });
+  c.on('pointerdown', () => { inner.y = 3; });
+  c.on('pointerup', () => { inner.y = 0; });
+  c.on('pointerupoutside', () => { c.scale.set(1); inner.y = 0; });
+  c.on('pointertap', (e) => { Sound.click(); onClick(e); });
+  c.label_ = t;
+  return c;
+}
+
+/* ==================================================================
+   FACE DRAWING  (shared across every animal)
+   mood: 0 = miserable, 1 = delighted
+   ================================================================== */
+function drawFace(g, cfg, mood) {
+  g.clear();
+  const sad = 1 - mood;
+  const dark = cfg.dark || 0x2B1D14;
+
+  cfg.eyes.forEach(e => {
+    // white
+    g.beginFill(0xFFFFFF).drawEllipse(e.x, e.y, e.r, e.r * 1.05).endFill();
+    // pupil drifts down when sad, up when happy
+    const py = e.y + (sad * e.r * 0.28) - (mood * e.r * 0.1);
+    g.beginFill(dark).drawCircle(e.x, py, e.r * 0.56).endFill();
+    g.beginFill(0xFFFFFF, 0.95).drawCircle(e.x + e.r * 0.24, py - e.r * 0.24, e.r * 0.19).endFill();
+    g.beginFill(0xFFFFFF, 0.6).drawCircle(e.x - e.r * 0.26, py + e.r * 0.2, e.r * 0.1).endFill();
+
+    // brow: inner end lifts when sad
+    const by = e.y - e.r * 2.05;
+    const inX = e.x - e.side * e.r * 1.15, outX = e.x + e.side * e.r * 1.15;
+    const inY = by - sad * e.r * 0.62 + mood * e.r * 0.12;
+    const outY = by + sad * e.r * 0.3 - mood * e.r * 0.25;
+    g.lineStyle({ width: Math.max(3, e.r * 0.32), color: dark, cap: 'round' });
+    g.moveTo(inX, inY);
+    g.quadraticCurveTo((inX + outX) / 2, (inY + outY) / 2 - mood * e.r * 0.4, outX, outY);
+    g.lineStyle(0);
+  });
+
+  // mouth: frown -> smile
+  const m = cfg.mouth;
+  const bend = (mood * 2 - 1) * m.h;
+  g.lineStyle({ width: m.t || 6, color: dark, cap: 'round' });
+  g.moveTo(m.x - m.w, m.y - bend * 0.35);
+  g.quadraticCurveTo(m.x, m.y + bend * 2.1, m.x + m.w, m.y - bend * 0.35);
+  g.lineStyle(0);
+
+  // happy tongue
+  if (mood > 0.75) {
+    const a = (mood - 0.75) / 0.25;
+    g.beginFill(0xE86A7C, a).drawEllipse(m.x, m.y + m.h * 1.25, m.w * 0.42, m.h * 0.6 * a).endFill();
+  }
+}
+
+function drawTears(g, cfg, mood, t) {
+  g.clear();
+  const a = clamp((0.45 - mood) / 0.45, 0, 1);
+  if (a <= 0.01) return;
+  cfg.eyes.forEach((e, i) => {
+    const fall = ((t * 0.9 + i * 0.5) % 1);
+    const y = e.y + e.r * 1.2 + fall * e.r * 3.2;
+    const s = e.r * 0.3 * (1 - fall * 0.35);
+    g.beginFill(0x6FC5F5, a * (1 - fall) * 0.95);
+    g.drawEllipse(e.x + e.side * e.r * 0.55, y, s * 0.78, s * 1.15);
+    g.endFill();
+    g.beginFill(0xFFFFFF, a * (1 - fall) * 0.5);
+    g.drawCircle(e.x + e.side * e.r * 0.55 - s * 0.22, y - s * 0.3, s * 0.22);
+    g.endFill();
+  });
+}
+
+/* Attach face + mood machinery to a built animal container */
+function finishAnimal(c, faceCfg) {
+  const faceG = new PIXI.Graphics();
+  const tearG = new PIXI.Graphics();
+  c.addChild(faceG, tearG);
+  c.faceCfg = faceCfg;
+  c.mood = 0;
+  c.setMood = (m) => { c.mood = m; drawFace(faceG, faceCfg, m); };
+  c.tickFace = (t) => { drawTears(tearG, faceCfg, c.mood, t); };
+  c.setMood(0);
+  return c;
+}
+
+/* ==================================================================
+   ANIMAL ARTWORK  (all vector, local space roughly -180..180 / -170..150)
+   ================================================================== */
+function buildTiger() {
+  const c = new PIXI.Container();
+  const g = new PIXI.Graphics();
+  c.addChild(g);
+  const OR = 0xF29434, DK = 0xD97420, CR = 0xFFE7C4, BK = 0x33241B;
+
+  // tail
+  g.lineStyle({ width: 22, color: OR, cap: 'round' });
+  g.moveTo(95, 70); g.bezierCurveTo(160, 70, 180, 20, 148, -20);
+  g.lineStyle(0);
+  g.beginFill(BK).drawCircle(148, -20, 11).endFill();
+  [[125, 55], [155, 40]].forEach(p => { g.beginFill(BK, 0.85).drawEllipse(p[0], p[1], 5, 9).endFill(); });
+
+  // hind paws
+  [[-72, 108], [72, 108]].forEach(p => {
+    g.beginFill(DK).drawEllipse(p[0], p[1], 36, 24).endFill();
+    g.beginFill(CR).drawEllipse(p[0], p[1] + 4, 24, 13).endFill();
+  });
+
+  // body
+  g.beginFill(OR).drawEllipse(0, 42, 112, 88).endFill();
+  g.beginFill(CR).drawEllipse(0, 62, 70, 60).endFill();
+  // body stripes
+  g.beginFill(BK, 0.9);
+  g.drawEllipse(-92, 20, 8, 22); g.drawEllipse(-86, 62, 7, 18);
+  g.drawEllipse(92, 20, 8, 22);  g.drawEllipse(86, 62, 7, 18);
+  g.endFill();
+
+  // front paws
+  [[-58, 116], [58, 116]].forEach(p => {
+    g.beginFill(OR).drawEllipse(p[0], p[1], 34, 22).endFill();
+    g.beginFill(CR).drawEllipse(p[0], p[1] + 3, 22, 12).endFill();
+    g.beginFill(DK, 0.8);
+    g.drawCircle(p[0] - 12, p[1] + 1, 4); g.drawCircle(p[0], p[1] - 1, 4); g.drawCircle(p[0] + 12, p[1] + 1, 4);
+    g.endFill();
+  });
+
+  // ears
+  [-60, 60].forEach(x => {
+    g.beginFill(OR).drawCircle(x, -116, 27).endFill();
+    g.beginFill(0xE88C9B).drawCircle(x, -114, 14).endFill();
+  });
+
+  // head
+  g.beginFill(OR).drawEllipse(0, -60, 80, 74).endFill();
+  // head stripes
+  g.beginFill(BK, 0.9);
+  g.drawEllipse(0, -122, 5, 15);
+  g.drawEllipse(-20, -120, 5, 13); g.drawEllipse(20, -120, 5, 13);
+  g.drawEllipse(-70, -72, 15, 5); g.drawEllipse(70, -72, 15, 5);
+  g.drawEllipse(-68, -50, 13, 5); g.drawEllipse(68, -50, 13, 5);
+  g.endFill();
+  // muzzle
+  g.beginFill(CR).drawEllipse(-20, -32, 27, 21).drawEllipse(20, -32, 27, 21).endFill();
+  // nose
+  g.beginFill(0xC4566B).moveTo(-11, -50).lineTo(11, -50).lineTo(0, -38).closePath().endFill();
+  // whiskers
+  g.lineStyle({ width: 2.4, color: 0xFFFFFF, alpha: 0.85, cap: 'round' });
+  [[-1, -6], [1, 6]].forEach(o => {
+    g.moveTo(o[0] * 34, -38); g.lineTo(o[0] * 76, -44 + o[1]);
+    g.moveTo(o[0] * 34, -32); g.lineTo(o[0] * 78, -28 + o[1]);
+  });
+  g.lineStyle(0);
+
+  return finishAnimal(c, {
+    dark: BK,
+    eyes: [{ x: -31, y: -74, r: 13, side: -1 }, { x: 31, y: -74, r: 13, side: 1 }],
+    mouth: { x: 0, y: -26, w: 22, h: 8, t: 5 }
+  });
+}
+
+function buildDolphin() {
+  const c = new PIXI.Container();
+  const g = new PIXI.Graphics();
+  c.addChild(g);
+  const BL = 0x6B93B8, DK = 0x4A6F92, LT = 0xE9F4FA;
+
+  // tail fluke
+  g.beginFill(DK);
+  g.moveTo(112, 8); g.bezierCurveTo(150, -30, 178, -42, 172, -14);
+  g.bezierCurveTo(168, 6, 145, 18, 128, 26);
+  g.bezierCurveTo(150, 34, 172, 48, 168, 66);
+  g.bezierCurveTo(160, 86, 132, 54, 108, 30);
+  g.closePath(); g.endFill();
+
+  // body
+  g.beginFill(BL);
+  g.moveTo(-152, -6);
+  g.bezierCurveTo(-120, -34, -70, -78, 0, -72);
+  g.bezierCurveTo(70, -66, 112, -26, 122, 12);
+  g.bezierCurveTo(100, 44, 40, 66, -30, 52);
+  g.bezierCurveTo(-90, 40, -134, 16, -152, -6);
+  g.closePath(); g.endFill();
+
+  // belly
+  g.beginFill(LT);
+  g.moveTo(-128, 4);
+  g.bezierCurveTo(-70, 42, 20, 58, 96, 26);
+  g.bezierCurveTo(40, 56, -60, 50, -128, 4);
+  g.closePath(); g.endFill();
+  g.beginFill(LT, 0.95).drawEllipse(-10, 40, 76, 18).endFill();
+
+  // dorsal fin
+  g.beginFill(DK);
+  g.moveTo(-4, -70); g.bezierCurveTo(4, -116, 34, -132, 26, -104);
+  g.bezierCurveTo(22, -88, 30, -74, 44, -62); g.closePath(); g.endFill();
+
+  // pectoral fin
+  g.beginFill(DK);
+  g.moveTo(-44, 32); g.bezierCurveTo(-70, 74, -52, 96, -28, 74);
+  g.bezierCurveTo(-14, 60, -10, 44, -12, 32); g.closePath(); g.endFill();
+
+  // rostrum / beak
+  g.beginFill(BL);
+  g.moveTo(-128, -14); g.bezierCurveTo(-152, -18, -176, -12, -178, -4);
+  g.bezierCurveTo(-174, 6, -148, 10, -122, 6); g.closePath(); g.endFill();
+  g.lineStyle({ width: 2.5, color: DK, alpha: 0.6, cap: 'round' });
+  g.moveTo(-176, -2); g.lineTo(-126, 0);
+  g.lineStyle(0);
+  // blowhole
+  g.beginFill(DK, 0.7).drawEllipse(-58, -66, 7, 4).endFill();
+
+  return finishAnimal(c, {
+    dark: 0x24384A,
+    eyes: [{ x: -92, y: -32, r: 11, side: -1 }, { x: -58, y: -38, r: 11, side: 1 }],
+    mouth: { x: -140, y: 2, w: 20, h: 6, t: 4 }
+  });
+}
+
+function buildTurtle() {
+  const c = new PIXI.Container();
+  const g = new PIXI.Graphics();
+  c.addChild(g);
+  const SH = 0x3F8F5C, SD = 0x2C6A42, SK = 0x8FC96B, SKD = 0x6FAA4E;
+
+  // back flippers
+  g.beginFill(SKD).drawEllipse(78, 84, 40, 22).endFill();
+  g.beginFill(SKD).drawEllipse(-78, 84, 40, 22).endFill();
+
+  // tail
+  g.beginFill(SK).moveTo(105, 40).lineTo(140, 52).lineTo(104, 62).closePath().endFill();
+
+  // body
+  g.beginFill(SK).drawEllipse(0, 48, 104, 44).endFill();
+
+  // head + neck
+  g.beginFill(SK).drawEllipse(-98, 24, 44, 30).endFill();
+  g.beginFill(SK).drawEllipse(-128, 8, 40, 34).endFill();
+  g.beginFill(SKD, 0.5).drawEllipse(-142, 22, 20, 10).endFill();
+
+  // front flippers
+  g.beginFill(SK).drawEllipse(-58, 78, 44, 24).endFill();
+  g.beginFill(SKD, 0.35).drawEllipse(-58, 82, 30, 12).endFill();
+  g.beginFill(SK).drawEllipse(58, 78, 44, 24).endFill();
+
+  // shell
+  g.beginFill(SD).drawEllipse(0, -4, 122, 86).endFill();
+  g.beginFill(SH).drawEllipse(0, -8, 112, 78).endFill();
+  // hexagon scutes
+  const hex = (cx, cy, r) => {
+    g.moveTo(cx + r, cy);
+    for (let i = 1; i <= 6; i++) g.lineTo(cx + r * Math.cos(i * Math.PI / 3), cy + r * Math.sin(i * Math.PI / 3));
+    g.closePath();
+  };
+  g.beginFill(SD, 0.55);
+  hex(0, -22, 26); hex(-50, -6, 22); hex(50, -6, 22); hex(-26, 34, 20); hex(26, 34, 20); hex(0, -66, 18);
+  g.endFill();
+  g.lineStyle({ width: 3, color: 0x255A38, alpha: 0.5 });
+  hex(0, -22, 26); hex(-50, -6, 22); hex(50, -6, 22);
+  g.lineStyle(0);
+  // shell shine
+  g.beginFill(0xFFFFFF, 0.16).drawEllipse(-42, -46, 34, 16).endFill();
+
+  // Eyes must stay forward of x=-110, where the shell edge starts covering the head.
+  return finishAnimal(c, {
+    dark: 0x1F3A22,
+    eyes: [{ x: -148, y: 0, r: 10, side: -1 }, { x: -120, y: -2, r: 10, side: 1 }],
+    mouth: { x: -142, y: 24, w: 16, h: 6, t: 4 }
+  });
+}
+
+function buildHorse() {
+  const c = new PIXI.Container();
+  const g = new PIXI.Graphics();
+  c.addChild(g);
+  const BR = 0x9E6038, DK = 0x7A4726, MN = 0x4A3020, HF = 0x3A2C22;
+
+  // tail
+  g.beginFill(MN);
+  g.moveTo(104, 0); g.bezierCurveTo(146, 6, 152, 70, 128, 106);
+  g.bezierCurveTo(118, 74, 106, 44, 96, 24); g.closePath(); g.endFill();
+
+  // back legs
+  [62, 88].forEach(x => {
+    g.beginFill(DK).drawRoundedRect(x - 12, 46, 24, 78, 9).endFill();
+    g.beginFill(HF).drawRoundedRect(x - 13, 118, 26, 14, 4).endFill();
+  });
+  // front legs
+  [-58, -32].forEach(x => {
+    g.beginFill(BR).drawRoundedRect(x - 12, 44, 24, 76, 9).endFill();
+    g.beginFill(HF).drawRoundedRect(x - 13, 116, 26, 14, 4).endFill();
+  });
+
+  // body
+  g.beginFill(BR).drawEllipse(10, 22, 108, 66).endFill();
+  g.beginFill(0xC08655, 0.5).drawEllipse(10, 46, 78, 34).endFill();
+
+  // neck
+  g.beginFill(BR);
+  g.moveTo(-96, 4); g.bezierCurveTo(-92, -50, -78, -84, -50, -96);
+  g.lineTo(-16, -46); g.bezierCurveTo(-30, -18, -48, 6, -60, 24); g.closePath(); g.endFill();
+
+  // head
+  g.beginFill(BR);
+  g.moveTo(-52, -96); g.bezierCurveTo(-84, -128, -128, -132, -140, -108);
+  g.bezierCurveTo(-148, -92, -128, -74, -104, -68);
+  g.bezierCurveTo(-80, -62, -58, -70, -50, -84); g.closePath(); g.endFill();
+  // muzzle
+  g.beginFill(0xC7906A).drawEllipse(-128, -100, 22, 17).endFill();
+  g.beginFill(0x5C3A24).drawEllipse(-136, -102, 4, 5).endFill();
+  // ears
+  g.beginFill(BR).moveTo(-58, -104).lineTo(-52, -140).lineTo(-36, -110).closePath().endFill();
+  g.beginFill(0xE0A9C0).moveTo(-54, -110).lineTo(-51, -132).lineTo(-43, -113).closePath().endFill();
+
+  // mane
+  g.beginFill(MN);
+  g.moveTo(-50, -110); g.bezierCurveTo(-30, -100, -14, -60, -8, -20);
+  g.bezierCurveTo(-24, -40, -34, -34, -44, -12);
+  g.bezierCurveTo(-52, -50, -58, -84, -62, -104); g.closePath(); g.endFill();
+
+  return finishAnimal(c, {
+    dark: 0x2E1D12,
+    eyes: [{ x: -104, y: -104, r: 10, side: -1 }, { x: -74, y: -96, r: 10, side: 1 }],
+    mouth: { x: -132, y: -86, w: 14, h: 5, t: 4 }
+  });
+}
+
+function buildChicken() {
+  const c = new PIXI.Container();
+  const g = new PIXI.Graphics();
+  c.addChild(g);
+  const BD = 0xFDF4E3, SH = 0xE8D9C0, RD = 0xD8433C, OR = 0xF2A03D;
+
+  // tail feathers
+  g.beginFill(SH);
+  g.moveTo(78, -10); g.bezierCurveTo(124, -44, 146, -22, 128, 10);
+  g.bezierCurveTo(146, -4, 152, 20, 120, 34); g.closePath(); g.endFill();
+
+  // legs
+  [[-24, 0], [22, 0]].forEach(p => {
+    g.lineStyle({ width: 7, color: OR, cap: 'round' });
+    g.moveTo(p[0], 78); g.lineTo(p[0], 118);
+    g.moveTo(p[0], 118); g.lineTo(p[0] - 14, 130);
+    g.moveTo(p[0], 118); g.lineTo(p[0], 132);
+    g.moveTo(p[0], 118); g.lineTo(p[0] + 14, 130);
+    g.lineStyle(0);
+  });
+
+  // body
+  g.beginFill(BD).drawEllipse(6, 16, 92, 82).endFill();
+  // wing
+  g.beginFill(SH).drawEllipse(24, 22, 52, 40).endFill();
+  g.lineStyle({ width: 3, color: 0xD3C2A4, alpha: 0.8, cap: 'round' });
+  g.moveTo(-4, 34); g.lineTo(58, 26);
+  g.moveTo(0, 48); g.lineTo(56, 40);
+  g.lineStyle(0);
+
+  // head
+  g.beginFill(BD).drawCircle(-62, -66, 47).endFill();
+  // comb
+  g.beginFill(RD);
+  g.drawCircle(-84, -110, 13); g.drawCircle(-64, -120, 15); g.drawCircle(-44, -110, 12);
+  g.endFill();
+  // wattle
+  g.beginFill(RD).drawEllipse(-88, -32, 10, 15).drawEllipse(-76, -28, 9, 13).endFill();
+  // beak
+  g.beginFill(OR).moveTo(-100, -62).lineTo(-138, -54).lineTo(-100, -44).closePath().endFill();
+  g.beginFill(0xD9862B).moveTo(-100, -53).lineTo(-138, -54).lineTo(-100, -44).closePath().endFill();
+
+  return finishAnimal(c, {
+    dark: 0x2E241A,
+    eyes: [{ x: -84, y: -74, r: 10, side: -1 }, { x: -50, y: -76, r: 10, side: 1 }],
+    mouth: { x: -70, y: -44, w: 10, h: 4, t: 3 }
+  });
+}
+
+function buildDuck() {
+  const c = new PIXI.Container();
+  const g = new PIXI.Graphics();
+  c.addChild(g);
+  const BD = 0xFFD95E, SH = 0xF0BE3C, OR = 0xF2803D;
+
+  // tail
+  g.beginFill(BD).moveTo(80, 4).lineTo(128, -18).lineTo(120, 22).closePath().endFill();
+
+  // feet
+  [[-22, 0], [24, 0]].forEach(p => {
+    g.beginFill(OR);
+    g.moveTo(p[0], 92); g.lineTo(p[0] - 18, 128); g.lineTo(p[0] + 18, 128); g.closePath();
+    g.endFill();
+    g.beginFill(OR).drawRoundedRect(p[0] - 4, 78, 8, 22, 3).endFill();
+  });
+
+  // body
+  g.beginFill(BD).drawEllipse(6, 20, 96, 74).endFill();
+  // wing
+  g.beginFill(SH);
+  g.moveTo(-30, 6); g.bezierCurveTo(20, -14, 76, 4, 68, 34);
+  g.bezierCurveTo(30, 58, -16, 42, -30, 6); g.closePath(); g.endFill();
+  g.lineStyle({ width: 3, color: 0xDCA92B, alpha: 0.75, cap: 'round' });
+  g.moveTo(-6, 40); g.lineTo(52, 30);
+  g.moveTo(2, 50); g.lineTo(56, 40);
+  g.lineStyle(0);
+
+  // neck + head
+  g.beginFill(BD).drawEllipse(-56, -22, 30, 40).endFill();
+  g.beginFill(BD).drawCircle(-70, -68, 45).endFill();
+  // bill
+  g.beginFill(OR).drawEllipse(-118, -56, 30, 13).endFill();
+  g.beginFill(0xD96A2C).drawEllipse(-124, -52, 22, 5).endFill();
+  g.beginFill(0xD96A2C).drawCircle(-104, -62, 2.5).endFill();
+  // cheek blush
+  g.beginFill(0xF0A05E, 0.35).drawCircle(-42, -56, 13).endFill();
+
+  return finishAnimal(c, {
+    dark: 0x3A2A12,
+    eyes: [{ x: -92, y: -78, r: 10, side: -1 }, { x: -58, y: -80, r: 10, side: 1 }],
+    mouth: { x: -100, y: -44, w: 11, h: 4, t: 3 }
+  });
+}
+
+/* ==================================================================
+   HABITATS
+   ================================================================== */
+function habJungle() {
+  const c = new PIXI.Container();
+  const sky = new PIXI.Sprite(gradTex([[0, '#BFE6A0'], [0.45, '#6FBF73'], [1, '#2F7A46']]));
+  sky.width = W; sky.height = H; c.addChild(sky);
+  const g = new PIXI.Graphics(); c.addChild(g);
+  // sun shafts
+  g.beginFill(0xFFF6C4, 0.13);
+  for (let i = 0; i < 5; i++) {
+    const x = 90 + i * 190;
+    g.moveTo(x, 0).lineTo(x + 60, 0).lineTo(x + 140, H).lineTo(x + 40, H).closePath();
+  }
+  g.endFill();
+  // trees
+  for (let i = 0; i < 6; i++) {
+    const x = 40 + i * 180, hgt = 300 + (i % 3) * 60;
+    g.beginFill(0x4A3A28, 0.85).drawRoundedRect(x - 16, 0, 32, hgt, 8).endFill();
+    g.beginFill(0x2E6B3E, 0.9).drawEllipse(x, hgt - 20, 78, 46).endFill();
+    g.beginFill(0x3D8A4E, 0.9).drawEllipse(x - 20, hgt - 44, 58, 34).endFill();
+  }
+  // leaves top
+  g.beginFill(0x1F5C34, 0.95);
+  for (let i = 0; i < 14; i++) g.drawEllipse(i * 74, 10 + (i % 3) * 22, 66, 44);
+  g.endFill();
+  // ground
+  g.beginFill(0x2C6B3C).drawEllipse(W / 2, H + 60, W, 190).endFill();
+  g.beginFill(0x3C8449, 0.85).drawEllipse(W / 2, H + 80, W * 0.8, 160).endFill();
+  // ferns
+  g.beginFill(0x1F5C34, 0.7);
+  for (let i = 0; i < 18; i++) g.drawEllipse(i * 56 + 10, 520 + (i % 4) * 26, 30, 52);
+  g.endFill();
+  return c;
+}
+
+function habOcean() {
+  const c = new PIXI.Container();
+  const sky = new PIXI.Sprite(gradTex([[0, '#59C6EE'], [0.5, '#2E7FBF'], [1, '#123E70']]));
+  sky.width = W; sky.height = H; c.addChild(sky);
+  const g = new PIXI.Graphics(); c.addChild(g);
+  g.beginFill(0xFFFFFF, 0.1);
+  for (let i = 0; i < 6; i++) {
+    const x = 40 + i * 170;
+    g.moveTo(x, 0).lineTo(x + 44, 0).lineTo(x + 120, H).lineTo(x + 30, H).closePath();
+  }
+  g.endFill();
+  // seabed
+  g.beginFill(0xE8D9A8).drawEllipse(W / 2, H + 70, W, 170).endFill();
+  g.beginFill(0xD5C088, 0.7).drawEllipse(240, H - 42, 130, 34).drawEllipse(720, H - 30, 160, 40).endFill();
+  // corals
+  [[120, 0xE87E9B], [820, 0xF2A65A], [640, 0xB08CE0]].forEach(cr => {
+    const x = cr[0];
+    g.lineStyle({ width: 12, color: cr[1], alpha: 0.85, cap: 'round' });
+    g.moveTo(x, H - 30); g.lineTo(x, H - 100);
+    g.moveTo(x, H - 70); g.lineTo(x - 26, H - 112);
+    g.moveTo(x, H - 76); g.lineTo(x + 28, H - 120);
+    g.lineStyle(0);
+  });
+  // seaweed
+  g.lineStyle({ width: 9, color: 0x2E8B57, alpha: 0.8, cap: 'round' });
+  for (let i = 0; i < 7; i++) {
+    const x = 60 + i * 150;
+    g.moveTo(x, H - 20);
+    g.bezierCurveTo(x - 26, H - 90, x + 26, H - 150, x - 8, H - 220);
+  }
+  g.lineStyle(0);
+  // bubbles
+  g.beginFill(0xFFFFFF, 0.25);
+  for (let i = 0; i < 26; i++) g.drawCircle((i * 137) % W, (i * 211) % H, 3 + (i % 4) * 2);
+  g.endFill();
+  return c;
+}
+
+function habBeach() {
+  const c = new PIXI.Container();
+  const sky = new PIXI.Sprite(gradTex([[0, '#8FD9F5'], [0.55, '#CFEEF9'], [1, '#FBE9C4']]));
+  sky.width = W; sky.height = H; c.addChild(sky);
+  const g = new PIXI.Graphics(); c.addChild(g);
+  g.beginFill(0xFFE9A0, 0.9).drawCircle(818, 96, 46).endFill();
+  g.beginFill(0xFFF6D0, 0.35).drawCircle(818, 96, 74).endFill();
+  g.beginFill(0xFFFFFF, 0.85);
+  g.drawEllipse(170, 110, 62, 26).drawEllipse(214, 100, 46, 22).drawEllipse(126, 104, 40, 18);
+  g.drawEllipse(520, 68, 50, 20).drawEllipse(560, 60, 36, 16);
+  g.endFill();
+  // sea
+  g.beginFill(0x2E90C4).drawRect(0, 300, W, 120).endFill();
+  g.beginFill(0x49AEDC).drawRect(0, 300, W, 46).endFill();
+  g.beginFill(0xFFFFFF, 0.5);
+  for (let i = 0; i < 12; i++) g.drawEllipse(i * 88 + 30, 336 + (i % 3) * 16, 32, 4);
+  g.endFill();
+  // surf
+  g.beginFill(0xFFFFFF, 0.9).drawEllipse(W / 2, 424, W, 22).endFill();
+  // sand
+  g.beginFill(0xF2DCA4).drawRect(0, 420, W, H - 420).endFill();
+  g.beginFill(0xE5C989, 0.6).drawEllipse(W / 2, H + 40, W * 0.9, 150).endFill();
+  g.beginFill(0xD9BB78, 0.5);
+  for (let i = 0; i < 40; i++) g.drawCircle((i * 173) % W, 440 + (i * 97) % 190, 2 + (i % 3));
+  g.endFill();
+  // palm
+  g.beginFill(0x8A6238).drawRoundedRect(58, 300, 20, 160, 8).endFill();
+  g.beginFill(0x2E8B57, 0.95);
+  [[-1, -10], [1, -10], [-1, 24], [1, 24]].forEach(o => g.drawEllipse(68 + o[0] * 52, 302 + o[1], 56, 18));
+  g.endFill();
+  return c;
+}
+
+function habFarm() {
+  const c = new PIXI.Container();
+  const sky = new PIXI.Sprite(gradTex([[0, '#8ED2F2'], [0.6, '#CBEBF7'], [1, '#EAF6D8']]));
+  sky.width = W; sky.height = H; c.addChild(sky);
+  const g = new PIXI.Graphics(); c.addChild(g);
+  g.beginFill(0xFFF3B8, 0.95).drawCircle(120, 88, 42).endFill();
+  g.beginFill(0xFFFFFF, 0.9);
+  g.drawEllipse(660, 96, 66, 26).drawEllipse(706, 86, 48, 22).drawEllipse(614, 90, 42, 18);
+  g.endFill();
+  // hills
+  g.beginFill(0x74B85E).drawEllipse(200, 460, 340, 150).endFill();
+  g.beginFill(0x68A954).drawEllipse(760, 470, 380, 160).endFill();
+  // barn
+  g.beginFill(0xC0453A).drawRect(650, 250, 190, 130).endFill();
+  g.beginFill(0x9B3630).moveTo(636, 252).lineTo(745, 190).lineTo(854, 252).closePath().endFill();
+  g.beginFill(0xF3E6CF).drawRect(710, 300, 70, 80).endFill();
+  g.lineStyle({ width: 5, color: 0x9B3630 });
+  g.moveTo(710, 300); g.lineTo(780, 380); g.moveTo(780, 300); g.lineTo(710, 380);
+  g.lineStyle(0);
+  // grass
+  g.beginFill(0x86C866).drawRect(0, 380, W, H - 380).endFill();
+  g.beginFill(0x74B85E, 0.7).drawEllipse(W / 2, H + 30, W, 170).endFill();
+  // fence
+  g.beginFill(0xF0E2C4);
+  for (let i = 0; i < 12; i++) g.drawRoundedRect(i * 84 + 16, 390, 12, 62, 4);
+  g.drawRect(0, 404, W, 9); g.drawRect(0, 428, W, 9);
+  g.endFill();
+  // grass tufts
+  g.lineStyle({ width: 3, color: 0x5C9A48, alpha: 0.8, cap: 'round' });
+  for (let i = 0; i < 30; i++) {
+    const x = (i * 67) % W, y = 500 + (i * 53) % 120;
+    g.moveTo(x, y); g.lineTo(x - 5, y - 14);
+    g.moveTo(x, y); g.lineTo(x + 6, y - 12);
+  }
+  g.lineStyle(0);
+  return c;
+}
+
+function habCoop() {
+  const c = new PIXI.Container();
+  const sky = new PIXI.Sprite(gradTex([[0, '#C99A62'], [0.6, '#E5C089'], [1, '#F5DFAF']]));
+  sky.width = W; sky.height = H; c.addChild(sky);
+  const g = new PIXI.Graphics(); c.addChild(g);
+  // plank wall
+  g.beginFill(0x000000, 0.09);
+  for (let i = 0; i < 9; i++) g.drawRect(0, i * 52 + 20, W, 6);
+  g.endFill();
+  // window
+  g.beginFill(0x8FD2F0).drawRoundedRect(700, 70, 160, 120, 8).endFill();
+  g.lineStyle({ width: 9, color: 0x9B6B3E });
+  g.drawRoundedRect(700, 70, 160, 120, 8);
+  g.moveTo(780, 70); g.lineTo(780, 190); g.moveTo(700, 130); g.lineTo(860, 130);
+  g.lineStyle(0);
+  // nest boxes
+  [90, 250].forEach(x => {
+    g.beginFill(0x9B6B3E).drawRoundedRect(x, 80, 130, 110, 8).endFill();
+    g.beginFill(0x5E3F22).drawRoundedRect(x + 10, 90, 110, 90, 6).endFill();
+    g.beginFill(0xE0B45E, 0.9).drawEllipse(x + 65, 172, 56, 16).endFill();
+  });
+  // straw floor
+  g.beginFill(0xE8C877).drawRect(0, 430, W, H - 430).endFill();
+  g.lineStyle({ width: 3, color: 0xC9A34E, alpha: 0.85, cap: 'round' });
+  for (let i = 0; i < 70; i++) {
+    const x = (i * 149) % W, y = 440 + (i * 71) % 190, a = (i % 5) * 0.6;
+    g.moveTo(x, y); g.lineTo(x + Math.cos(a) * 26, y + Math.sin(a) * 8);
+  }
+  g.lineStyle(0);
+  return c;
+}
+
+function habPond() {
+  const c = new PIXI.Container();
+  const sky = new PIXI.Sprite(gradTex([[0, '#9FDCF5'], [0.5, '#D8F0F7'], [1, '#B7E2A6']]));
+  sky.width = W; sky.height = H; c.addChild(sky);
+  const g = new PIXI.Graphics(); c.addChild(g);
+  g.beginFill(0xFFFFFF, 0.85);
+  g.drawEllipse(200, 82, 62, 24).drawEllipse(244, 72, 44, 20);
+  g.drawEllipse(740, 110, 54, 22).drawEllipse(778, 102, 38, 17);
+  g.endFill();
+  // far trees
+  [80, 170, 860, 930].forEach((x, i) => {
+    g.beginFill(0x6B4A2C).drawRect(x - 8, 230, 16, 110).endFill();
+    g.beginFill(0x4E9B57, 0.95).drawCircle(x, 220, 52 - (i % 2) * 10).endFill();
+  });
+  // bank
+  g.beginFill(0x86C866).drawRect(0, 330, W, H - 330).endFill();
+  // pond
+  g.beginFill(0x3E8FC0).drawEllipse(W / 2, 470, 430, 165).endFill();
+  g.beginFill(0x59A9D4).drawEllipse(W / 2, 462, 400, 145).endFill();
+  g.beginFill(0xFFFFFF, 0.28);
+  for (let i = 0; i < 9; i++) g.drawEllipse(200 + i * 68, 400 + (i % 3) * 60, 40, 5);
+  g.endFill();
+  // lily pads
+  [[300, 400], [660, 420], [500, 560], [740, 520]].forEach(p => {
+    g.beginFill(0x3E8B4E, 0.95).drawEllipse(p[0], p[1], 30, 16).endFill();
+    g.beginFill(0x2F6B3C, 0.9).moveTo(p[0], p[1]).lineTo(p[0] + 26, p[1] - 8).lineTo(p[0] + 26, p[1] + 8).closePath().endFill();
+  });
+  // reeds
+  g.lineStyle({ width: 5, color: 0x4E8B3C, cap: 'round' });
+  for (let i = 0; i < 10; i++) {
+    const x = i < 5 ? 40 + i * 24 : 800 + (i - 5) * 26;
+    g.moveTo(x, 560); g.bezierCurveTo(x - 10, 480, x + 10, 430, x, 370);
+  }
+  g.lineStyle(0);
+  g.beginFill(0x8A5A2E);
+  for (let i = 0; i < 10; i++) {
+    const x = i < 5 ? 40 + i * 24 : 800 + (i - 5) * 26;
+    g.drawRoundedRect(x - 5, 350, 10, 34, 5);
+  }
+  g.endFill();
+  return c;
+}
+
+/* ==================================================================
+   ANIMAL DEFINITIONS
+   ================================================================== */
+const ANIMALS = [
+  {
+    id: 'tiger', name: 'Tiger', icon: '🐯', wild: true, habitatName: 'the jungle',
+    colour: 0xF29434, build: buildTiger, habitat: habJungle,
+    scale: 1, y: 380,
+    intro: 'Raja the tiger limped out of the jungle. He looks so sad — can you help?',
+    problems: [
+      { x: -58, y: 116, icon: '🐾', tool: '🩹', label: 'Sore paw',      hint: 'Tap the sore paw to clean and bandage it' },
+      { x: 92,  y: 40,  icon: '🦟', tool: '🧴', label: 'Itchy bites',   hint: 'Tap the itchy bites to soothe them' },
+      { x: 150, y: -22, icon: '🌵', tool: '🤏', label: 'Thorn in tail', hint: 'Tap the thorn to pull it out gently' },
+      { x: -92, y: -14, icon: '🪵', tool: '🪥', label: 'Matted fur',    hint: 'Tap the matted fur to brush it out' }
+    ],
+    foods: [{ e: '🥩', n: 'Meat' }, { e: '🍗', n: 'Chicken' }, { e: '💧', n: 'Water' }]
+  },
+  {
+    id: 'dolphin', name: 'Dolphin', icon: '🐬', wild: true, habitatName: 'the reef',
+    colour: 0x6B93B8, build: buildDolphin, habitat: habOcean,
+    scale: 1, y: 360,
+    intro: 'Splash the dolphin swam into some rubbish. She needs your gentle hands.',
+    problems: [
+      { x: 30,   y: 18,  icon: '🕸️', tool: '✂️', label: 'Tangled net',   hint: 'Tap the net to cut it away carefully' },
+      { x: 14,   y: -96, icon: '🩹', tool: '🧴', label: 'Scratched fin', hint: 'Tap the scratched fin to treat it' },
+      { x: 86,   y: -30, icon: '☀️', tool: '🧴', label: 'Sunburn patch', hint: 'Tap the sunburn to cool it down' },
+      { x: -150, y: -22, icon: '⭕', tool: '🤏', label: 'Plastic ring',  hint: 'Tap the plastic ring to slip it off' }
+    ],
+    foods: [{ e: '🐟', n: 'Fish' }, { e: '🦑', n: 'Squid' }, { e: '🦐', n: 'Shrimp' }]
+  },
+  {
+    id: 'turtle', name: 'Turtle', icon: '🐢', wild: true, habitatName: 'the beach',
+    colour: 0x3F8F5C, build: buildTurtle, habitat: habBeach,
+    scale: 1, y: 400,
+    intro: 'Shelly the turtle washed up on the sand. Her shell has taken a knock.',
+    problems: [
+      { x: 0,    y: -52, icon: '💥', tool: '🩹', label: 'Cracked shell', hint: 'Tap the crack to patch her shell' },
+      { x: -120, y: -22, icon: '🥤', tool: '🤏', label: 'Stuck straw',   hint: 'Tap the straw to pull it out of her nose' },
+      { x: 62,   y: -28, icon: '🐚', tool: '🧽', label: 'Barnacles',     hint: 'Tap the barnacles to scrub them off' },
+      { x: -58,  y: 82,  icon: '🩹', tool: '🧴', label: 'Sore flipper',  hint: 'Tap the sore flipper to rub in cream' }
+    ],
+    foods: [{ e: '🥬', n: 'Lettuce' }, { e: '🍓', n: 'Berry' }, { e: '🌿', n: 'Seagrass' }]
+  },
+  {
+    id: 'horse', name: 'Horse', icon: '🐴', wild: false, habitatName: 'the farm',
+    colour: 0x9E6038, build: buildHorse, habitat: habFarm,
+    scale: 1, y: 376,
+    intro: 'Pepper the horse has been in the field all week and needs a check-up.',
+    problems: [
+      { x: -58, y: 122, icon: '🔩', tool: '🔨', label: 'Loose shoe',  hint: 'Tap the loose shoe to nail it back on' },
+      { x: -34, y: -58, icon: '🌾', tool: '🪮', label: 'Tangled mane', hint: 'Tap the tangled mane to comb it out' },
+      { x: 40,  y: 6,   icon: '🦟', tool: '🧴', label: 'Fly bites',   hint: 'Tap the fly bites to soothe them' },
+      { x: 76,  y: 122, icon: '🐾', tool: '🧽', label: 'Muddy hoof',  hint: 'Tap the muddy hoof to clean it out' }
+    ],
+    foods: [{ e: '🍎', n: 'Apple' }, { e: '🥕', n: 'Carrot' }, { e: '🌾', n: 'Hay' }]
+  },
+  {
+    id: 'chicken', name: 'Chicken', icon: '🐔', wild: false, habitatName: 'the coop',
+    colour: 0xE8D9C0, build: buildChicken, habitat: habCoop,
+    scale: 1.05, y: 368,
+    intro: 'Nugget the chicken has had a rough night in the coop. Time for some TLC.',
+    problems: [
+      { x: 52,  y: 4,    icon: '🪶', tool: '🧴', label: 'Bare patch',   hint: 'Tap the bare patch to help her feathers grow' },
+      { x: -12, y: 62,   icon: '🐛', tool: '🧴', label: 'Mites',        hint: 'Tap the mites to dust them away' },
+      { x: 22,  y: 124,  icon: '🧼', tool: '🧽', label: 'Muddy feet',   hint: 'Tap the muddy feet to wash them' },
+      { x: -64, y: -122, icon: '🩹', tool: '🧴', label: 'Pecked comb',  hint: 'Tap the sore comb to dab it better' }
+    ],
+    foods: [{ e: '🌽', n: 'Corn' }, { e: '🫘', n: 'Seeds' }, { e: '🪱', n: 'Worm' }]
+  },
+  {
+    id: 'duck', name: 'Duck', icon: '🦆', wild: false, habitatName: 'the pond',
+    colour: 0xFFD95E, build: buildDuck, habitat: habPond,
+    scale: 1.05, y: 376,
+    intro: 'Puddles the duck got into a sticky mess by the pond. She needs a helper!',
+    problems: [
+      { x: 30,  y: 18,  icon: '🛢️', tool: '🧽', label: 'Oily wing',    hint: 'Tap the oily wing to wash the oil off' },
+      { x: -22, y: 106, icon: '🧵', tool: '✂️', label: 'Tangled string', hint: 'Tap the string to snip it off her leg' },
+      { x: 78,  y: 40,  icon: '🦟', tool: '🧴', label: 'Itchy bites',   hint: 'Tap the itchy bites to soothe them' },
+      { x: -92, y: -34, icon: '🩹', tool: '🧴', label: 'Scratched neck', hint: 'Tap the scratch to clean it up' }
+    ],
+    foods: [{ e: '🫛', n: 'Peas' }, { e: '🌽', n: 'Sweetcorn' }, { e: '🥬', n: 'Lettuce' }]
+  }
+];
+const byId = (id) => ANIMALS.filter(a => a.id === id)[0];
+function isUnlocked(a) { return a.wild || wildAllSaved(); }
+
+/* ==================================================================
+   SCENES
+   ================================================================== */
+const sceneTitle = new PIXI.Container();
+const sceneSelect = new PIXI.Container();
+const sceneGame = new PIXI.Container();
+app.stage.addChild(sceneTitle, sceneSelect, sceneGame);
+
+function show(scene) {
+  [sceneTitle, sceneSelect, sceneGame].forEach(s => { s.visible = (s === scene); });
+}
+
+/* ---------- shared decorative background for menus ---------- */
+function menuBg(parent) {
+  const sky = new PIXI.Sprite(gradTex([[0, '#7ED0F0'], [0.5, '#B7E8D0'], [1, '#8ED07A']]));
+  sky.width = W; sky.height = H;
+  parent.addChild(sky);
+  const g = new PIXI.Graphics();
+  g.beginFill(0xFFF3B8, 0.95).drawCircle(96, 84, 40).endFill();
+  g.beginFill(0xFFF9DC, 0.3).drawCircle(96, 84, 66).endFill();
+  g.beginFill(0xFFFFFF, 0.8);
+  g.drawEllipse(760, 92, 64, 24).drawEllipse(806, 82, 46, 20).drawEllipse(714, 86, 40, 17);
+  g.drawEllipse(300, 60, 50, 20).drawEllipse(338, 52, 36, 16);
+  g.endFill();
+  g.beginFill(0x5FA84E, 0.55).drawEllipse(150, H - 20, 400, 130).endFill();
+  g.beginFill(0x4E9640, 0.55).drawEllipse(800, H - 10, 420, 140).endFill();
+  g.beginFill(0x4C8F3E).drawEllipse(W / 2, H + 62, W, 150).endFill();
+  parent.addChild(g);
+  return g;
+}
+
+/* ==================================================================
+   TITLE SCENE
+   ================================================================== */
+(function buildTitle() {
+  menuBg(sceneTitle);
+
+  // floating animal emoji
+  const floaters = new PIXI.Container();
+  sceneTitle.addChild(floaters);
+  const fl = [];
+  ['🐯', '🐬', '🐢', '🐴', '🐔', '🦆', '🐾', '💚', '🐾', '✨'].forEach((e, i) => {
+    const s = emo(e, 26 + (i % 3) * 10);
+    s.x = 60 + (i * 97) % (W - 120);
+    s.y = 120 + (i * 151) % 420;
+    s.alpha = 0.4;
+    s.base = s.y; s.ph = i * 0.9; s.sp = 0.5 + (i % 3) * 0.2;
+    floaters.addChild(s); fl.push(s);
+  });
+
+  const panel = new PIXI.Graphics();
+  panel.beginFill(0x1F3B2E, 0.34).drawRoundedRect(W / 2 - 320, 96, 640, 210, 30).endFill();
+  sceneTitle.addChild(panel);
+
+  const t1 = txt('Help the', 46, 0xFFFFFF, 'bold');
+  t1.anchor.set(0.5); t1.x = W / 2; t1.y = 152;
+  t1.style.stroke = 0x2C5B3A; t1.style.strokeThickness = 8;
+  t1.style.dropShadow = true; t1.style.dropShadowDistance = 4; t1.style.dropShadowAlpha = 0.35;
+
+  const t2 = txt('ANIMALS', 84, 0xFFD75E, 'bold');
+  t2.anchor.set(0.5); t2.x = W / 2; t2.y = 226;
+  t2.style.stroke = 0x8A4A16; t2.style.strokeThickness = 11;
+  t2.style.dropShadow = true; t2.style.dropShadowDistance = 6; t2.style.dropShadowAlpha = 0.4;
+
+  const t3 = txt('Care for injured animals and set them free 🐾', 20, 0xFFFFFF);
+  t3.anchor.set(0.5); t3.x = W / 2; t3.y = 288;
+  t3.style.fontFamily = EMOJI + ',' + FONT;
+  t3.style.dropShadow = true; t3.style.dropShadowDistance = 2; t3.style.dropShadowAlpha = 0.5;
+
+  sceneTitle.addChild(t1, t2, t3);
+
+  const startBtn = makeButton('▶  Start Helping', 290, 68, 0x4CA653, () => {
+    if (save.playerName) { goSelect(); }
+    else { openName(); }
+  }, { size: 24 });
+  startBtn.x = W / 2; startBtn.y = 386;
+
+  const jBtn = makeButton('📖  Journal', 210, 56, 0xE9922F, openJournal, { size: 19 });
+  jBtn.x = W / 2 - 118; jBtn.y = 470;
+  jBtn.label_.style.fontFamily = EMOJI + ',' + FONT;
+
+  const nBtn = makeButton('🔄  New Game', 210, 56, 0x96876F, () => veil('mReset', true), { size: 19 });
+  nBtn.x = W / 2 + 118; nBtn.y = 470;
+  nBtn.label_.style.fontFamily = EMOJI + ',' + FONT;
+
+  sceneTitle.addChild(startBtn, jBtn, nBtn);
+
+  const prog = txt('', 18, 0xFFFFFF, 'bold');
+  prog.anchor.set(0.5); prog.x = W / 2; prog.y = 552;
+  prog.style.dropShadow = true; prog.style.dropShadowDistance = 2; prog.style.dropShadowAlpha = 0.5;
+  sceneTitle.addChild(prog);
+
+  const credit = txt('Made with PixiJS · your progress saves automatically', 13, 0xFFFFFF);
+  credit.anchor.set(0.5); credit.x = W / 2; credit.y = 610; credit.alpha = 0.65;
+  sceneTitle.addChild(credit);
+
+  sceneTitle.refresh = () => {
+    prog.text = save.playerName
+      ? `${save.playerName} — ${save.saved.length} of ${ANIMALS.length} animals helped`
+      : 'A brand new adventure awaits';
+    startBtn.label_.text = save.playerName ? '▶  Keep Helping' : '▶  Start Helping';
+  };
+  sceneTitle.refresh();
+
+  let t = 0;
+  app.ticker.add((d) => {
+    if (!sceneTitle.visible) return;
+    t += d / 60;
+    fl.forEach(s => {
+      s.y = s.base + Math.sin(t * s.sp + s.ph) * 16;
+      s.rotation = Math.sin(t * s.sp * 0.7 + s.ph) * 0.14;
+    });
+    t2.scale.set(1 + Math.sin(t * 1.8) * 0.02);
+  });
+})();
+
+/* ==================================================================
+   SELECT SCENE
+   ================================================================== */
+let selectCards = [];
+(function buildSelect() {
+  menuBg(sceneSelect);
+
+  const head = txt('', 34, 0xFFFFFF, 'bold');
+  head.anchor.set(0.5); head.x = W / 2; head.y = 58;
+  head.style.stroke = 0x2C5B3A; head.style.strokeThickness = 6;
+  sceneSelect.addChild(head);
+
+  const sub = txt('Choose an animal to help', 19, 0xFFFFFF);
+  sub.anchor.set(0.5); sub.x = W / 2; sub.y = 96; sub.alpha = 0.92;
+  sceneSelect.addChild(sub);
+
+  const cardsC = new PIXI.Container();
+  sceneSelect.addChild(cardsC);
+
+  ANIMALS.forEach((a, i) => {
+    const col = i % 3, row = Math.floor(i / 3);
+    const card = new PIXI.Container();
+    card.x = 200 + col * 280;
+    card.y = 236 + row * 216;
+
+    const shadow = new PIXI.Graphics();
+    shadow.beginFill(0x000000, 0.25).drawRoundedRect(-108, -92, 216, 190, 22).endFill();
+    shadow.y = 7;
+    const bg = new PIXI.Graphics();
+    const face = emo(a.icon, 74); face.y = -26;
+    const nm = txt(a.name, 24, 0xFFFFFF, 'bold'); nm.anchor.set(0.5); nm.y = 40;
+    const status = txt('', 14, 0xFFFFFF, 'bold'); status.anchor.set(0.5); status.y = 68;
+    status.style.fontFamily = EMOJI + ',' + FONT;
+
+    card.addChild(shadow, bg, face, nm, status);
+    cardsC.addChild(card);
+
+    card.redraw = () => {
+      const unlocked = isUnlocked(a);
+      const done = isSaved(a.id);
+      bg.clear();
+      bg.beginFill(unlocked ? a.colour : 0x6E6E78)
+        .drawRoundedRect(-108, -92, 216, 190, 22).endFill();
+      bg.beginFill(0xFFFFFF, unlocked ? 0.22 : 0.1)
+        .drawRoundedRect(-100, -84, 200, 74, 18).endFill();
+      bg.lineStyle({ width: 5, color: done ? 0xFFD75E : 0xFFFFFF, alpha: done ? 1 : 0.5 });
+      bg.drawRoundedRect(-108, -92, 216, 190, 22);
+      bg.lineStyle(0);
+
+      face.text = unlocked ? a.icon : '🔒';
+      face.alpha = unlocked ? 1 : 0.85;
+      nm.text = unlocked ? a.name : '???';
+      status.text = !unlocked ? 'Locked' : (done ? '⭐ Saved!' : 'Needs help');
+      status.alpha = done ? 1 : 0.85;
+      status.style.fill = done ? 0xFFD75E : 0xFFFFFF;
+
+      card.eventMode = unlocked ? 'static' : 'none';
+      card.cursor = unlocked ? 'pointer' : 'default';
+      card.alpha = unlocked ? 1 : 0.72;
+    };
+
+    card.hitArea = new PIXI.Rectangle(-108, -92, 216, 190);
+    card.on('pointerover', () => { card.scale.set(1.06); });
+    card.on('pointerout', () => { card.scale.set(1); });
+    card.on('pointertap', () => {
+      if (!isUnlocked(a)) return;
+      Sound.click();
+      card.scale.set(1);
+      startGame(a);
+    });
+
+    card.animal = a;
+    card.baseY = card.y;
+    selectCards.push(card);
+  });
+
+  const backBtn = makeButton('◀  Menu', 150, 48, 0x96876F, () => { show(sceneTitle); sceneTitle.refresh(); }, { size: 17 });
+  backBtn.x = 92; backBtn.y = 56;
+  const jBtn2 = makeButton('📖  Journal', 165, 48, 0xE9922F, openJournal, { size: 17 });
+  jBtn2.x = W - 96; jBtn2.y = 56;
+  jBtn2.label_.style.fontFamily = EMOJI + ',' + FONT;
+  sceneSelect.addChild(backBtn, jBtn2);
+
+  const hint = txt('', 17, 0xFFFFFF, 'bold');
+  hint.anchor.set(0.5); hint.x = W / 2; hint.y = 606;
+  hint.style.fontFamily = EMOJI + ',' + FONT;
+  hint.style.dropShadow = true; hint.style.dropShadowDistance = 2; hint.style.dropShadowAlpha = 0.5;
+  sceneSelect.addChild(hint);
+
+  sceneSelect.refresh = () => {
+    head.text = save.playerName ? `Hi ${save.playerName}!` : 'Hi there!';
+    selectCards.forEach(c => c.redraw());
+    const n = save.saved.length;
+    if (n >= ANIMALS.length) hint.text = '🏆 You saved every animal — you are a true animal hero!';
+    else if (wildAllSaved()) hint.text = '🔓 Farm animals unlocked! ' + (ANIMALS.length - n) + ' still need you.';
+    else hint.text = '🔒 Save the Tiger, Dolphin and Turtle to unlock 3 more friends';
+  };
+
+  let t = 0;
+  app.ticker.add((d) => {
+    if (!sceneSelect.visible) return;
+    t += d / 60;
+    selectCards.forEach((c, i) => { c.y = c.baseY + Math.sin(t * 1.3 + i * 0.7) * 5; });
+  });
+})();
+
+function goSelect() {
+  sceneSelect.refresh();
+  show(sceneSelect);
+}
+
+/* ==================================================================
+   GAME SCENE
+   ================================================================== */
+const worldC = new PIXI.Container();   // habitat + animal + fx  (this is what the camera photographs)
+const habC = new PIXI.Container();
+const animalC = new PIXI.Container();
+const fxC = new PIXI.Container();
+
+// Feeding target halo. Built once: endDrag() is bound to the stage for the whole
+// session, so this must exist before any level starts.
+const mouthGlow = new PIXI.Graphics();
+mouthGlow.beginFill(0xFFFFFF, 0.22).drawCircle(0, 0, 76).endFill();
+mouthGlow.lineStyle({ width: 4, color: 0xFFE68A, alpha: 0.9 });
+mouthGlow.drawCircle(0, 0, 76);
+mouthGlow.lineStyle(0);
+mouthGlow.visible = false;
+
+worldC.addChild(habC, animalC, mouthGlow, fxC);
+
+const hudC = new PIXI.Container();
+const trayC = new PIXI.Container();
+const dragLayer = new PIXI.Container();
+sceneGame.addChild(worldC, hudC, trayC, dragLayer);
+
+/* ---- HUD ---- */
+const barBG = new PIXI.Graphics();
+const barFill = new PIXI.Graphics();
+const barLabel = txt('', 17, 0xFFFFFF, 'bold');
+const barPct = txt('', 17, 0xFFFFFF, 'bold');
+const nameTag = txt('', 22, 0xFFFFFF, 'bold');
+const hintTag = txt('', 17, 0xFFFFFF, 'bold');
+
+const BAR_X = 300, BAR_Y = 34, BAR_W = 360, BAR_H = 30;
+barBG.beginFill(0x000000, 0.42).drawRoundedRect(BAR_X - 8, BAR_Y - 8, BAR_W + 16, BAR_H + 16, 16).endFill();
+barBG.beginFill(0x2B3A2E).drawRoundedRect(BAR_X, BAR_Y, BAR_W, BAR_H, BAR_H / 2).endFill();
+barLabel.text = '❤ Health';
+barLabel.anchor.set(1, 0.5); barLabel.x = BAR_X - 18; barLabel.y = BAR_Y + BAR_H / 2;
+barLabel.style.dropShadow = true; barLabel.style.dropShadowDistance = 2; barLabel.style.dropShadowAlpha = 0.6;
+barPct.anchor.set(0, 0.5); barPct.x = BAR_X + BAR_W + 18; barPct.y = BAR_Y + BAR_H / 2;
+barPct.style.dropShadow = true; barPct.style.dropShadowDistance = 2; barPct.style.dropShadowAlpha = 0.6;
+
+nameTag.anchor.set(0.5, 0); nameTag.x = W / 2; nameTag.y = 76;
+nameTag.style.dropShadow = true; nameTag.style.dropShadowDistance = 2; nameTag.style.dropShadowAlpha = 0.6;
+
+hintTag.anchor.set(0.5); hintTag.x = W / 2; hintTag.y = 118;
+hintTag.style.fontFamily = EMOJI + ',' + FONT;
+hintTag.style.stroke = 0x1E2A1E; hintTag.style.strokeThickness = 5;
+
+const backGame = makeButton('◀', 54, 46, 0x96876F, () => { show(sceneSelect); sceneSelect.refresh(); }, { size: 20 });
+backGame.x = 44; backGame.y = 42;
+
+hudC.addChild(barBG, barFill, barLabel, barPct, nameTag, hintTag, backGame);
+
+/* ---- game state ---- */
+let cur = null;          // current animal definition
+let curAnimal = null;    // built display container
+let health = 0, shownHealth = 0;
+let markers = [];
+let foodItems = [];
+let finished = false;
+let gameTime = 0;
+let animalBaseY = 0;
+
+function drawHealthBar() {
+  const p = clamp(shownHealth / 100, 0, 1);
+  barFill.clear();
+  if (p <= 0.001) return;
+  const col = p < 0.35 ? 0xE05A46 : (p < 0.7 ? 0xF0A82E : 0x4CC65E);
+  const w = Math.max(BAR_H, BAR_W * p);
+  barFill.beginFill(col).drawRoundedRect(BAR_X, BAR_Y, w, BAR_H, BAR_H / 2).endFill();
+  barFill.beginFill(0xFFFFFF, 0.3).drawRoundedRect(BAR_X + 4, BAR_Y + 4, w - 8, BAR_H * 0.34, BAR_H / 4).endFill();
+  barPct.text = Math.round(shownHealth) + '%';
+}
+
+/* ---- floating fx ---- */
+const parts = [];
+function burst(x, y, chars, n) {
+  for (let i = 0; i < n; i++) {
+    const s = emo(chars[i % chars.length], 18 + Math.random() * 14);
+    s.x = x; s.y = y;
+    s.vx = (Math.random() - 0.5) * 3.4;
+    s.vy = -1.6 - Math.random() * 2.4;
+    s.life = 1; s.spin = 0.03; s.grav = 0.055;
+    fxC.addChild(s); parts.push(s);
+  }
+}
+function floatText(x, y, str, colour, size) {
+  const s = txt(str, size || 24, colour || 0xFFFFFF, 'bold');
+  s.anchor.set(0.5); s.x = x; s.y = y;
+  s.style.stroke = 0x24331F; s.style.strokeThickness = 5;
+  // Text stays upright and drifts gently — only emoji bursts tumble.
+  s.vx = 0; s.vy = -0.6; s.life = 1; s.spin = 0; s.grav = 0;
+  fxC.addChild(s); parts.push(s);
+}
+
+/* ---- problem markers ---- */
+function makeMarker(pdef) {
+  const c = new PIXI.Container();
+  c.x = pdef.x; c.y = pdef.y;
+
+  const ring = new PIXI.Graphics();
+  const glow = new PIXI.Graphics();
+  const icon = emo(pdef.icon, 27);
+  const prog = new PIXI.Graphics();
+  c.addChild(glow, ring, prog, icon);
+
+  glow.beginFill(0xFF5A48, 0.22).drawCircle(0, 0, 34).endFill();
+  ring.beginFill(0xFFFFFF, 0.94).drawCircle(0, 0, 23).endFill();
+  ring.lineStyle({ width: 4, color: 0xE04A38 });
+  ring.drawCircle(0, 0, 23);
+  ring.lineStyle(0);
+
+  c.taps = 0;
+  c.def = pdef;
+  c.eventMode = 'static';
+  c.cursor = 'pointer';
+  c.hitArea = new PIXI.Circle(0, 0, 30);
+
+  const drawProg = () => {
+    prog.clear();
+    if (c.taps === 0) return;
+    prog.lineStyle({ width: 5, color: 0x4CC65E, cap: 'round' });
+    prog.arc(0, 0, 28, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (c.taps / TAPS_TO_FIX));
+    prog.lineStyle(0);
+  };
+
+  c.on('pointertap', () => {
+    if (finished || c.done) return;
+    c.taps++;
+    drawProg();
+    c.shake = 1;
+    if (c.taps >= TAPS_TO_FIX) {
+      c.done = true;
+      c.eventMode = 'none';
+      Sound.heal();
+      const gp = animalC.toGlobal(new PIXI.Point(c.x, c.y));
+      burst(gp.x, gp.y, ['✨', '💚', pdef.tool], 7);
+      floatText(gp.x, gp.y - 34, '+' + PER_PROBLEM, 0x8CF08A);
+      addHealth(PER_PROBLEM);
+      // healed: fade the marker out with a pop
+      c.fading = 1;
+      setHint();
+    } else {
+      Sound.tap();
+      const gp = animalC.toGlobal(new PIXI.Point(c.x, c.y));
+      burst(gp.x, gp.y, [pdef.tool], 2);
+    }
+  });
+  c.on('pointerover', () => { c.hovered = true; setHint(pdef.hint); });
+  c.on('pointerout', () => { c.hovered = false; setHint(); });
+
+  c.ring = ring; c.glow = glow; c.icon = icon;
+  return c;
+}
+
+function setHint(str) {
+  if (finished) { hintTag.text = ''; return; }
+  if (str) { hintTag.text = str; hintTag.style.fill = 0xFFE68A; return; }
+  const left = markers.filter(m => !m.done).length;
+  const fleft = foodItems.filter(f => !f.eaten).length;
+  if (left > 0) hintTag.text = `Tap the ${left} red spot${left > 1 ? 's' : ''} to treat them`;
+  else if (fleft > 0) hintTag.text = `Now drag the food to ${cur.name.toLowerCase()}'s mouth 🍽️`;
+  else hintTag.text = '';
+  hintTag.style.fill = 0xFFFFFF;
+}
+
+/* ---- food tray ---- */
+function makeFood(fdef, idx, total) {
+  const c = new PIXI.Container();
+  const slotX = W / 2 + (idx - (total - 1) / 2) * 108;
+  const slotY = H - 62;
+  c.homeX = slotX; c.homeY = slotY;
+  c.x = slotX; c.y = slotY;
+
+  const plate = new PIXI.Graphics();
+  plate.beginFill(0x000000, 0.28).drawCircle(0, 6, 40).endFill();
+  plate.beginFill(0xFFF6E2).drawCircle(0, 0, 38).endFill();
+  plate.lineStyle({ width: 4, color: 0xE0B579 });
+  plate.drawCircle(0, 0, 38);
+  plate.lineStyle(0);
+  const icon = emo(fdef.e, 40);
+  const nm = txt(fdef.n, 13, 0xFFFFFF, 'bold');
+  nm.anchor.set(0.5); nm.y = 50;
+  nm.style.stroke = 0x2A2318; nm.style.strokeThickness = 4;
+
+  c.addChild(plate, icon, nm);
+  c.eventMode = 'static';
+  c.cursor = 'grab';
+  c.hitArea = new PIXI.Circle(0, 0, 40);
+  c.def = fdef;
+  c.icon = icon;
+
+  c.on('pointerdown', (e) => {
+    if (finished || c.eaten) return;
+    c.dragging = true;
+    c.cursor = 'grabbing';
+    dragLayer.addChild(c);
+    c.scale.set(1.18);
+    nm.visible = false;
+    const p = e.global;
+    c.x = p.x; c.y = p.y;
+    mouthGlow.visible = true;
+  });
+  return c;
+}
+
+app.stage.on('pointermove', (e) => {
+  foodItems.forEach(f => {
+    if (f.dragging) { f.x = e.global.x; f.y = e.global.y; }
+  });
+});
+function endDrag() {
+  if (!cur || !curAnimal) return;   // stage-wide handler: menus fire this too
+  foodItems.forEach(f => {
+    if (!f.dragging) return;
+    f.dragging = false;
+    f.cursor = 'grab';
+    const mp = mouthGlobal();
+    if (!finished && dist(f.x, f.y, mp.x, mp.y) < 92) {
+      // fed!
+      f.eaten = true;
+      Sound.eat();
+      burst(mp.x, mp.y - 10, ['💚', '✨', f.def.e], 6);
+      floatText(mp.x, mp.y - 60, '+' + PER_FOOD, 0x8CF08A);
+      f.visible = false;
+      addHealth(PER_FOOD);
+      chomp();
+      setHint();
+    } else {
+      Sound.nope();
+      f.scale.set(1);
+      f.children[2].visible = true;
+      trayC.addChild(f);
+      f.x = f.homeX; f.y = f.homeY;
+    }
+    mouthGlow.visible = foodItems.some(x => x.dragging);
+  });
+  mouthGlow.visible = false;
+}
+app.stage.on('pointerup', endDrag);
+app.stage.on('pointerupoutside', endDrag);
+
+function mouthGlobal() {
+  const m = cur.mouthOverride || curAnimal.faceCfg.mouth;
+  return animalC.toGlobal(new PIXI.Point(m.x, m.y + 6));
+}
+
+let chompT = 0;
+function chomp() { chompT = 1; }
+
+/* ---- health ---- */
+function addHealth(n) {
+  health = clamp(health + n, 0, 100);
+  if (health >= 100 && !finished) {
+    finished = true;
+    setTimeout(onAnimalSaved, 950);
+  }
+}
+
+/* ---- start a level ---- */
+function startGame(a) {
+  cur = a;
+  finished = false;
+  health = START_HEALTH;
+  shownHealth = START_HEALTH;
+  gameTime = 0;
+
+  habC.removeChildren();
+  animalC.removeChildren();
+  fxC.removeChildren();
+  trayC.removeChildren();
+  dragLayer.removeChildren();
+  parts.length = 0;
+  markers = [];
+  foodItems = [];
+
+  habC.addChild(a.habitat());
+
+  curAnimal = a.build();
+  animalC.addChild(curAnimal);
+  animalC.x = W / 2;
+  animalC.y = a.y;
+  animalC.scale.set(a.scale);
+  animalBaseY = a.y;
+
+  mouthGlow.visible = false;
+
+  a.problems.forEach(p => {
+    const m = makeMarker(p);
+    curAnimal.addChild(m);
+    markers.push(m);
+  });
+
+  a.foods.forEach((f, i) => {
+    const fi = makeFood(f, i, a.foods.length);
+    trayC.addChild(fi);
+    foodItems.push(fi);
+  });
+
+  // tray backdrop — decoration only, so it must never swallow taps on the
+  // markers sitting near the animal's feet.
+  const tb = new PIXI.Graphics();
+  tb.beginFill(0x1E2A1E, 0.4).drawRoundedRect(W / 2 - 190, H - 106, 380, 96, 20).endFill();
+  tb.eventMode = 'none';
+  trayC.addChildAt(tb, 0);
+
+  nameTag.text = `${a.name} · ${a.habitatName}`;
+  barPct.text = START_HEALTH + '%';
+  drawHealthBar();
+  setHint();
+
+  floatText(W / 2, 200, a.intro.split('.')[0] + '!', 0xFFFFFF);
+
+  show(sceneGame);
+}
+
+/* ---- game ticker ---- */
+app.ticker.add((d) => {
+  if (!sceneGame.visible || !cur) return;
+  const dt = d / 60;
+  gameTime += dt;
+
+  // health lerp + mood
+  shownHealth = lerp(shownHealth, health, 0.12 * d);
+  if (Math.abs(shownHealth - health) < 0.2) shownHealth = health;
+  drawHealthBar();
+  const mood = clamp((shownHealth - 10) / 90, 0, 1);
+  curAnimal.setMood(mood);
+  curAnimal.tickFace(gameTime);
+
+  // bob — livelier as the animal feels better
+  const amp = 3 + mood * 7;
+  const spd = 1.3 + mood * 1.4;
+  animalC.y = animalBaseY + Math.sin(gameTime * spd) * amp;
+  animalC.rotation = Math.sin(gameTime * spd * 0.5) * 0.012 * (0.4 + mood);
+  const sq = 1 + Math.sin(gameTime * spd * 2) * 0.012 * mood;
+  animalC.scale.set(cur.scale, cur.scale * sq);
+
+  // chomp squash
+  if (chompT > 0) {
+    chompT = Math.max(0, chompT - dt * 3);
+    const k = Math.sin(chompT * Math.PI) * 0.09;
+    animalC.scale.set(cur.scale * (1 + k), cur.scale * (1 - k));
+  }
+
+  // mouth glow follows mouth
+  if (mouthGlow.visible) {
+    const mp = mouthGlobal();
+    mouthGlow.x = mp.x; mouthGlow.y = mp.y;
+    mouthGlow.scale.set(1 + Math.sin(gameTime * 6) * 0.06);
+    mouthGlow.alpha = 0.75 + Math.sin(gameTime * 6) * 0.2;
+  }
+
+  // markers
+  markers.forEach((m, i) => {
+    if (m.fading) {
+      m.fading -= dt * 2.2;
+      m.scale.set(1 + (1 - m.fading) * 0.7);
+      m.alpha = clamp(m.fading, 0, 1);
+      if (m.fading <= 0) { m.visible = false; m.fading = 0; }
+      return;
+    }
+    if (m.done) return;
+    const p = 1 + Math.sin(gameTime * 4.4 + i) * 0.09;
+    const hv = m.hovered ? 1.15 : 1;
+    m.scale.set(p * hv);
+    m.glow.alpha = 0.7 + Math.sin(gameTime * 4.4 + i) * 0.3;
+    if (m.shake > 0) {
+      m.shake -= dt * 5;
+      m.x = m.def.x + Math.sin(gameTime * 60) * 4 * m.shake;
+    } else { m.x = m.def.x; }
+  });
+
+  // particles
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const s = parts[i];
+    s.x += s.vx * d; s.y += s.vy * d;
+    s.vy += s.grav * d;
+    s.life -= 0.014 * d;
+    s.alpha = clamp(s.life, 0, 1);
+    s.rotation += s.spin * d;
+    if (s.life <= 0) { s.parent && s.parent.removeChild(s); parts.splice(i, 1); }
+  }
+});
+
+/* ==================================================================
+   PHOTO CAPTURE
+   ================================================================== */
+function capturePhoto() {
+  let rt = null;
+  const fxWasVisible = fxC.visible;
+  fxC.visible = false;   // keep drifting "+13"s and confetti out of the portrait
+  try {
+    // Render to a screen-sized texture rather than extracting worldC directly:
+    // the habitat art overflows the canvas on purpose, so its bounds are much
+    // larger than the 960x640 view and extracting them letterboxes the photo.
+    rt = PIXI.RenderTexture.create({ width: W, height: H, resolution: 1 });
+    app.renderer.render(worldC, { renderTexture: rt, clear: true });
+    const src = app.renderer.extract.canvas(rt);
+    const out = document.createElement('canvas');
+    out.width = 330; out.height = 220;              // same 3:2 as the stage
+    out.getContext('2d').drawImage(src, 0, 0, src.width, src.height, 0, 0, out.width, out.height);
+    return out.toDataURL('image/jpeg', 0.72);
+  } catch (e) {
+    return null;
+  } finally {
+    fxC.visible = fxWasVisible;
+    if (rt) rt.destroy(true);
+    // Rendering to a texture repoints the renderer at worldC; put the stage back
+    // so Pixi keeps hit-testing against the whole scene graph.
+    try { app.renderer.render(app.stage); } catch (e) {}
+  }
+}
+
+/* ==================================================================
+   DOM MODALS
+   ================================================================== */
+const $ = (id) => document.getElementById(id);
+function veil(id, on) { $(id).classList.toggle('on', !!on); }
+
+/* --- name --- */
+function openName() {
+  $('nameInput').value = save.playerName || '';
+  veil('mName', true);
+  setTimeout(() => $('nameInput').focus(), 60);
+}
+$('nameGo').onclick = () => {
+  const v = $('nameInput').value.trim().slice(0, 16);
+  save.playerName = v || 'Friend';
+  writeSave();
+  veil('mName', false);
+  sceneTitle.refresh();
+  goSelect();
+};
+$('nameBack').onclick = () => { veil('mName', false); };
+$('nameInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('nameGo').click(); });
+
+/* --- saved / photo --- */
+let pendingPhoto = null;
+let pendingUnlock = false;
+
+function onAnimalSaved() {
+  Sound.win();
+  hintTag.text = '';
+  // celebration
+  for (let i = 0; i < 22; i++) {
+    setTimeout(() => burst(120 + Math.random() * (W - 240), 180 + Math.random() * 220, ['🎉', '✨', '💚', '⭐'], 3), i * 60);
+  }
+  pendingPhoto = null;
+
+  // Compare before/after so replaying a saved animal cannot re-trigger the unlock.
+  const wildDoneBefore = wildAllSaved();
+  if (!isSaved(cur.id)) { save.saved.push(cur.id); writeSave(); }
+  pendingUnlock = !wildDoneBefore && wildAllSaved();
+
+  $('savedTitle').textContent = `🎉 ${cur.name} Saved!`;
+  $('savedText').innerHTML =
+    `<b>${cur.name}</b> is back to full health and ready to return to ${cur.habitatName}.<br>` +
+    `Take a photo for your journal before they go!`;
+  $('photoImg').style.display = 'none';
+  $('photoEmpty').style.display = 'flex';
+  $('photoCap').textContent = '';
+  renderSavedButtons('before');
+  veil('mSaved', true);
+}
+
+function renderSavedButtons(mode) {
+  const row = $('savedBtns');
+  row.innerHTML = '';
+  const add = (label, cls, fn) => {
+    const b = document.createElement('button');
+    b.className = 'b ' + (cls || '');
+    b.textContent = label;
+    b.onclick = fn;
+    row.appendChild(b);
+  };
+
+  if (mode === 'before') {
+    add('📸 Take Photo', 'green', () => {
+      veil('mSaved', false);
+      // let the modal clear, flash, then grab the frame
+      setTimeout(() => {
+        Sound.shutter();
+        $('flash').classList.remove('go');
+        void $('flash').offsetWidth;
+        $('flash').classList.add('go');
+        pendingPhoto = capturePhoto();
+        setTimeout(() => {
+          if (pendingPhoto) {
+            $('photoImg').src = pendingPhoto;
+            $('photoImg').style.display = 'block';
+            $('photoEmpty').style.display = 'none';
+          } else {
+            $('photoEmpty').textContent = 'Camera did not work — you can still continue.';
+          }
+          $('photoCap').textContent = `${cur.name} · saved by ${save.playerName}`;
+          renderSavedButtons('after');
+          veil('mSaved', true);
+        }, 320);
+      }, 120);
+    });
+    add('Skip photo', 'grey', () => finishLevel(false));
+  } else {
+    add('📖 Add to Journal', 'green', () => finishLevel(true));
+    add('🔄 Retake', '', () => {
+      $('photoImg').style.display = 'none';
+      $('photoEmpty').style.display = 'flex';
+      $('photoEmpty').textContent = 'Ready for a photo…';
+      $('photoCap').textContent = '';
+      pendingPhoto = null;
+      renderSavedButtons('before');
+    });
+  }
+}
+
+function finishLevel(withPhoto) {
+  // journal entry (replace any previous entry for this animal)
+  save.journal = save.journal.filter(j => j.id !== cur.id);
+  save.journal.push({
+    id: cur.id,
+    name: cur.name,
+    icon: cur.icon,
+    by: save.playerName,
+    date: new Date().toLocaleDateString(),
+    photo: withPhoto ? pendingPhoto : null
+  });
+  writeSave();
+  pendingPhoto = null;
+  veil('mSaved', false);
+
+  sceneSelect.refresh();
+  sceneTitle.refresh();
+
+  if (pendingUnlock) {
+    pendingUnlock = false;
+    setTimeout(() => veil('mUnlock', true), 260);
+  }
+  show(sceneSelect);
+}
+
+$('unlockOk').onclick = () => { veil('mUnlock', false); sceneSelect.refresh(); };
+
+/* --- journal --- */
+function openJournal() {
+  const grid = $('journalGrid');
+  grid.innerHTML = '';
+  $('journalSub').textContent = save.journal.length
+    ? `${save.playerName || 'You'} — ${save.saved.length} of ${ANIMALS.length} animals helped`
+    : '';
+  if (!save.journal.length) {
+    grid.innerHTML = '<div class="empJ" style="grid-column:1/-1;text-align:center">No animals in your journal yet.<br>Help an animal to add your first photo! 🐾</div>';
+  } else {
+    save.journal.forEach(j => {
+      const d = document.createElement('div');
+      d.className = 'jEntry';
+      d.innerHTML = (j.photo
+        ? `<img src="${j.photo}" alt="${j.name}">`
+        : `<div class="noPic">${j.icon || '🐾'}</div>`) +
+        `<b>${j.name} ⭐</b><em>${j.date} · by ${j.by || 'a helper'}</em>`;
+      grid.appendChild(d);
+    });
+  }
+  veil('mJournal', true);
+}
+$('journalClose').onclick = () => veil('mJournal', false);
+
+/* --- reset --- */
+$('resetYes').onclick = () => {
+  try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
+  save = blankSave();
+  veil('mReset', false);
+  sceneTitle.refresh();
+  sceneSelect.refresh();
+  show(sceneTitle);
+};
+$('resetNo').onclick = () => veil('mReset', false);
+
+/* close modals with Escape where it is safe */
+window.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  ['mJournal', 'mReset', 'mName'].forEach(id => veil(id, false));
+});
+
+/* ==================================================================
+   GO
+   ================================================================== */
+show(sceneTitle);
+sceneTitle.refresh();
+
+})();
+</script>
+</body>
+</html>
