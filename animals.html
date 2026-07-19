@@ -202,7 +202,6 @@ if (!window.PIXI) {
    ================================================================== */
 const W = 960, H = 640;
 const START_HEALTH = 12, PER_PROBLEM = 13, PER_FOOD = 12;   // 12 + 4*13 + 3*12 = 100
-const TAPS_TO_FIX = 3;
 const SAVE_KEY = 'helpTheAnimals.save.v1';
 const EMOJI = "'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji',sans-serif";
 const FONT = "'Trebuchet MS','Segoe UI',sans-serif";
@@ -267,6 +266,8 @@ const Sound = (function () {
     nope:   () => tone(150, 0.13, 'sawtooth', 0.06),
     click:  () => tone(760, 0.05, 'triangle', 0.09),
     shutter:() => { tone(1400, 0.03, 'square', 0.08, 0); tone(700, 0.06, 'square', 0.06, 0.04); },
+    scrub:  () => tone(260 + Math.random() * 140, 0.045, 'triangle', 0.05),
+    pop:    () => { tone(320, 0.07, 'square', 0.09, 0); tone(640, 0.12, 'sine', 0.12, 0.05); },
     win:    () => [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.32, 'sine', 0.14, i * 0.11))
   };
 })();
@@ -324,6 +325,41 @@ function gradTex(stops) {
   return PIXI.Texture.from(cv);
 }
 
+/* pointed-oval shape (tapered stripes, feathers, fur locks) */
+function leaf(g, x, y, len, wid, rot) {
+  const ca = Math.cos(rot), sa = Math.sin(rot);
+  const P = (dx, dy) => [x + dx * ca - dy * sa, y + dx * sa + dy * ca];
+  const a = P(-len / 2, 0), b = P(0, -wid / 2), e = P(len / 2, 0), d = P(0, wid / 2);
+  g.moveTo(a[0], a[1]);
+  g.quadraticCurveTo(b[0], b[1], e[0], e[1]);
+  g.quadraticCurveTo(d[0], d[1], a[0], a[1]);
+  g.closePath();
+}
+
+/* soft radial-gradient sprite for highlights / shadows */
+const softTex = (function () {
+  const cv = document.createElement('canvas');
+  cv.width = 256; cv.height = 256;
+  const c = cv.getContext('2d');
+  const g = c.createRadialGradient(128, 128, 8, 128, 128, 128);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.55, 'rgba(255,255,255,0.55)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  c.fillStyle = g; c.fillRect(0, 0, 256, 256);
+  return PIXI.Texture.from(cv);
+})();
+function soft(parent, x, y, rx, ry, tint, alpha) {
+  const s = new PIXI.Sprite(softTex);
+  s.anchor.set(0.5); s.x = x; s.y = y;
+  s.width = rx * 2; s.height = ry * 2;
+  s.tint = tint; s.alpha = alpha;
+  parent.addChild(s);
+  return s;
+}
+
+/* one shared ink colour gives every animal the same bold-outline cartoon look */
+const INK = 0x2E3A52;
+
 function makeButton(label, w, h, color, onClick, opts) {
   opts = opts || {};
   const c = new PIXI.Container();
@@ -358,23 +394,21 @@ function makeButton(label, w, h, color, onClick, opts) {
 function drawFace(g, cfg, mood) {
   g.clear();
   const sad = 1 - mood;
-  const dark = cfg.dark || 0x2B1D14;
 
   cfg.eyes.forEach(e => {
-    // white
-    g.beginFill(0xFFFFFF).drawEllipse(e.x, e.y, e.r, e.r * 1.05).endFill();
-    // pupil drifts down when sad, up when happy
-    const py = e.y + (sad * e.r * 0.28) - (mood * e.r * 0.1);
-    g.beginFill(dark).drawCircle(e.x, py, e.r * 0.56).endFill();
-    g.beginFill(0xFFFFFF, 0.95).drawCircle(e.x + e.r * 0.24, py - e.r * 0.24, e.r * 0.19).endFill();
-    g.beginFill(0xFFFFFF, 0.6).drawCircle(e.x - e.r * 0.26, py + e.r * 0.2, e.r * 0.1).endFill();
+    // solid ink cartoon eye, drooping a little when sad
+    const dy = sad * e.r * 0.18;
+    const h = e.r * (1.02 - sad * 0.3);
+    g.beginFill(INK).drawEllipse(e.x, e.y + dy, e.r * 0.8, h).endFill();
+    g.beginFill(0xFFFFFF).drawCircle(e.x + e.r * 0.26, e.y + dy - h * 0.35, e.r * 0.28).endFill();
+    g.beginFill(0xFFFFFF, 0.85).drawCircle(e.x - e.r * 0.22, e.y + dy + h * 0.3, e.r * 0.12).endFill();
 
     // brow: inner end lifts when sad
-    const by = e.y - e.r * 2.05;
-    const inX = e.x - e.side * e.r * 1.15, outX = e.x + e.side * e.r * 1.15;
-    const inY = by - sad * e.r * 0.62 + mood * e.r * 0.12;
-    const outY = by + sad * e.r * 0.3 - mood * e.r * 0.25;
-    g.lineStyle({ width: Math.max(3, e.r * 0.32), color: dark, cap: 'round' });
+    const by = e.y - e.r * 1.9;
+    const inX = e.x - e.side * e.r * 1.1, outX = e.x + e.side * e.r * 1.1;
+    const inY = by - sad * e.r * 0.6 + mood * e.r * 0.12;
+    const outY = by + sad * e.r * 0.34 - mood * e.r * 0.25;
+    g.lineStyle({ width: Math.max(3.5, e.r * 0.38), color: INK, cap: 'round' });
     g.moveTo(inX, inY);
     g.quadraticCurveTo((inX + outX) / 2, (inY + outY) / 2 - mood * e.r * 0.4, outX, outY);
     g.lineStyle(0);
@@ -383,7 +417,7 @@ function drawFace(g, cfg, mood) {
   // mouth: frown -> smile
   const m = cfg.mouth;
   const bend = (mood * 2 - 1) * m.h;
-  g.lineStyle({ width: m.t || 6, color: dark, cap: 'round' });
+  g.lineStyle({ width: (m.t || 6) + 1.5, color: INK, cap: 'round' });
   g.moveTo(m.x - m.w, m.y - bend * 0.35);
   g.quadraticCurveTo(m.x, m.y + bend * 2.1, m.x + m.w, m.y - bend * 0.35);
   g.lineStyle(0);
@@ -432,68 +466,99 @@ function buildTiger() {
   const c = new PIXI.Container();
   const g = new PIXI.Graphics();
   c.addChild(g);
-  const OR = 0xF29434, DK = 0xD97420, CR = 0xFFE7C4, BK = 0x33241B;
+  const OR = 0xF2A050, CR = 0xFFF3DC, PK = 0xF2A9B8;
 
-  // tail
-  g.lineStyle({ width: 22, color: OR, cap: 'round' });
-  g.moveTo(95, 70); g.bezierCurveTo(160, 70, 180, 20, 148, -20);
+  // tail: ink tube with an orange core
+  g.lineStyle({ width: 28, color: INK, cap: 'round' });
+  g.moveTo(95, 70); g.bezierCurveTo(160, 70, 182, 20, 150, -22);
+  g.lineStyle({ width: 18, color: OR, cap: 'round' });
+  g.moveTo(95, 70); g.bezierCurveTo(160, 70, 182, 20, 150, -22);
   g.lineStyle(0);
-  g.beginFill(BK).drawCircle(148, -20, 11).endFill();
-  [[125, 55], [155, 40]].forEach(p => { g.beginFill(BK, 0.85).drawEllipse(p[0], p[1], 5, 9).endFill(); });
+  g.beginFill(INK).drawCircle(150, -22, 13).endFill();
+  g.beginFill(INK); leaf(g, 126, 58, 24, 10, 1.0); leaf(g, 154, 34, 22, 9, 0.35); g.endFill();
 
   // hind paws
   [[-72, 108], [72, 108]].forEach(p => {
-    g.beginFill(DK).drawEllipse(p[0], p[1], 36, 24).endFill();
-    g.beginFill(CR).drawEllipse(p[0], p[1] + 4, 24, 13).endFill();
+    g.lineStyle({ width: 5, color: INK });
+    g.beginFill(OR).drawEllipse(p[0], p[1], 37, 25).endFill();
+    g.lineStyle(0);
+    g.beginFill(CR).drawEllipse(p[0], p[1] + 5, 24, 13).endFill();
   });
 
   // body
+  g.lineStyle({ width: 5, color: INK });
   g.beginFill(OR).drawEllipse(0, 42, 112, 88).endFill();
-  g.beginFill(CR).drawEllipse(0, 62, 70, 60).endFill();
+  g.lineStyle(0);
+  g.beginFill(CR).drawEllipse(0, 66, 68, 58).endFill();
   // body stripes
-  g.beginFill(BK, 0.9);
-  g.drawEllipse(-92, 20, 8, 22); g.drawEllipse(-86, 62, 7, 18);
-  g.drawEllipse(92, 20, 8, 22);  g.drawEllipse(86, 62, 7, 18);
+  g.beginFill(INK);
+  leaf(g, -94, 18, 46, 15, 1.45); leaf(g, -84, 62, 36, 12, 1.6);
+  leaf(g, 94, 18, 46, 15, -1.45); leaf(g, 84, 62, 36, 12, -1.6);
+  leaf(g, -66, -22, 34, 11, 1.25); leaf(g, 66, -22, 34, 11, -1.25);
   g.endFill();
 
-  // front paws
+  // front paws with toe lines
   [[-58, 116], [58, 116]].forEach(p => {
+    g.lineStyle({ width: 5, color: INK });
     g.beginFill(OR).drawEllipse(p[0], p[1], 34, 22).endFill();
-    g.beginFill(CR).drawEllipse(p[0], p[1] + 3, 22, 12).endFill();
-    g.beginFill(DK, 0.8);
-    g.drawCircle(p[0] - 12, p[1] + 1, 4); g.drawCircle(p[0], p[1] - 1, 4); g.drawCircle(p[0] + 12, p[1] + 1, 4);
-    g.endFill();
+    g.lineStyle(0);
+    g.beginFill(CR).drawEllipse(p[0], p[1] + 4, 22, 12).endFill();
+    g.lineStyle({ width: 3, color: INK, cap: 'round' });
+    g.moveTo(p[0] - 8, p[1] + 4); g.lineTo(p[0] - 8, p[1] + 14);
+    g.moveTo(p[0] + 8, p[1] + 4); g.lineTo(p[0] + 8, p[1] + 14);
+    g.lineStyle(0);
   });
 
   // ears
   [-60, 60].forEach(x => {
+    g.lineStyle({ width: 5, color: INK });
     g.beginFill(OR).drawCircle(x, -116, 27).endFill();
-    g.beginFill(0xE88C9B).drawCircle(x, -114, 14).endFill();
+    g.lineStyle(0);
+    g.beginFill(PK).drawCircle(x, -113, 14).endFill();
   });
 
+  // cheek ruffs
+  g.lineStyle({ width: 4, color: INK, join: 'round' });
+  g.beginFill(CR);
+  [-1, 1].forEach(sx => {
+    g.moveTo(sx * 52, -70);
+    g.lineTo(sx * 92, -62); g.lineTo(sx * 74, -50);
+    g.lineTo(sx * 96, -38); g.lineTo(sx * 72, -30);
+    g.lineTo(sx * 86, -14); g.lineTo(sx * 52, -18);
+    g.closePath();
+  });
+  g.endFill();
+  g.lineStyle(0);
+
   // head
+  g.lineStyle({ width: 5, color: INK });
   g.beginFill(OR).drawEllipse(0, -60, 80, 74).endFill();
+  g.lineStyle(0);
   // head stripes
-  g.beginFill(BK, 0.9);
-  g.drawEllipse(0, -122, 5, 15);
-  g.drawEllipse(-20, -120, 5, 13); g.drawEllipse(20, -120, 5, 13);
-  g.drawEllipse(-70, -72, 15, 5); g.drawEllipse(70, -72, 15, 5);
-  g.drawEllipse(-68, -50, 13, 5); g.drawEllipse(68, -50, 13, 5);
+  g.beginFill(INK);
+  leaf(g, 0, -122, 28, 10, Math.PI / 2);
+  leaf(g, -20, -119, 22, 9, 1.35); leaf(g, 20, -119, 22, 9, -1.35);
+  leaf(g, -68, -72, 24, 9, 0.1); leaf(g, 68, -72, 24, 9, -0.1);
   g.endFill();
   // muzzle
-  g.beginFill(CR).drawEllipse(-20, -32, 27, 21).drawEllipse(20, -32, 27, 21).endFill();
-  // nose
-  g.beginFill(0xC4566B).moveTo(-11, -50).lineTo(11, -50).lineTo(0, -38).closePath().endFill();
+  g.lineStyle({ width: 3, color: INK });
+  g.beginFill(CR).drawEllipse(-19, -32, 27, 21).endFill();
+  g.beginFill(CR).drawEllipse(19, -32, 27, 21).endFill();
+  g.lineStyle(0);
+  // nose + philtrum
+  g.lineStyle({ width: 4, color: INK, join: 'round' });
+  g.beginFill(0xE8829A).moveTo(-11, -51).lineTo(11, -51).lineTo(0, -37).closePath().endFill();
+  g.lineStyle(0);
+  g.lineStyle({ width: 3.5, color: INK, cap: 'round' });
+  g.moveTo(0, -38); g.lineTo(0, -29);
   // whiskers
-  g.lineStyle({ width: 2.4, color: 0xFFFFFF, alpha: 0.85, cap: 'round' });
-  [[-1, -6], [1, 6]].forEach(o => {
-    g.moveTo(o[0] * 34, -38); g.lineTo(o[0] * 76, -44 + o[1]);
-    g.moveTo(o[0] * 34, -32); g.lineTo(o[0] * 78, -28 + o[1]);
+  [-1, 1].forEach(s => {
+    g.moveTo(s * 36, -40); g.quadraticCurveTo(s * 62, -46, s * 80, -50);
+    g.moveTo(s * 36, -32); g.quadraticCurveTo(s * 64, -30, s * 82, -28);
   });
   g.lineStyle(0);
 
   return finishAnimal(c, {
-    dark: BK,
     eyes: [{ x: -31, y: -74, r: 13, side: -1 }, { x: 31, y: -74, r: 13, side: 1 }],
     mouth: { x: 0, y: -26, w: 22, h: 8, t: 5 }
   });
@@ -503,55 +568,61 @@ function buildDolphin() {
   const c = new PIXI.Container();
   const g = new PIXI.Graphics();
   c.addChild(g);
-  const BL = 0x6B93B8, DK = 0x4A6F92, LT = 0xE9F4FA;
+  const BD = 0xA6C1D8, LT = 0xE4EFF7;
 
   // tail fluke
-  g.beginFill(DK);
+  g.lineStyle({ width: 5, color: INK, join: 'round' });
+  g.beginFill(BD);
   g.moveTo(112, 8); g.bezierCurveTo(150, -30, 178, -42, 172, -14);
   g.bezierCurveTo(168, 6, 145, 18, 128, 26);
   g.bezierCurveTo(150, 34, 172, 48, 168, 66);
   g.bezierCurveTo(160, 86, 132, 54, 108, 30);
   g.closePath(); g.endFill();
+  g.lineStyle(0);
 
   // body
-  g.beginFill(BL);
+  g.lineStyle({ width: 5, color: INK, join: 'round' });
+  g.beginFill(BD);
   g.moveTo(-152, -6);
   g.bezierCurveTo(-120, -34, -70, -78, 0, -72);
   g.bezierCurveTo(70, -66, 112, -26, 122, 12);
   g.bezierCurveTo(100, 44, 40, 66, -30, 52);
   g.bezierCurveTo(-90, 40, -134, 16, -152, -6);
   g.closePath(); g.endFill();
+  g.lineStyle(0);
 
-  // belly
+  // belly with a single ink separation line
   g.beginFill(LT);
   g.moveTo(-128, 4);
   g.bezierCurveTo(-70, 42, 20, 58, 96, 26);
   g.bezierCurveTo(40, 56, -60, 50, -128, 4);
   g.closePath(); g.endFill();
-  g.beginFill(LT, 0.95).drawEllipse(-10, 40, 76, 18).endFill();
+  g.beginFill(LT).drawEllipse(-10, 42, 74, 16).endFill();
+  g.lineStyle({ width: 3, color: INK, cap: 'round' });
+  g.moveTo(-128, 4); g.bezierCurveTo(-70, 42, 20, 58, 96, 26);
+  g.lineStyle(0);
 
   // dorsal fin
-  g.beginFill(DK);
+  g.lineStyle({ width: 5, color: INK, join: 'round' });
+  g.beginFill(BD);
   g.moveTo(-4, -70); g.bezierCurveTo(4, -116, 34, -132, 26, -104);
   g.bezierCurveTo(22, -88, 30, -74, 44, -62); g.closePath(); g.endFill();
 
   // pectoral fin
-  g.beginFill(DK);
+  g.beginFill(BD);
   g.moveTo(-44, 32); g.bezierCurveTo(-70, 74, -52, 96, -28, 74);
   g.bezierCurveTo(-14, 60, -10, 44, -12, 32); g.closePath(); g.endFill();
 
   // rostrum / beak
-  g.beginFill(BL);
+  g.beginFill(BD);
   g.moveTo(-128, -14); g.bezierCurveTo(-152, -18, -176, -12, -178, -4);
   g.bezierCurveTo(-174, 6, -148, 10, -122, 6); g.closePath(); g.endFill();
-  g.lineStyle({ width: 2.5, color: DK, alpha: 0.6, cap: 'round' });
-  g.moveTo(-176, -2); g.lineTo(-126, 0);
   g.lineStyle(0);
+
   // blowhole
-  g.beginFill(DK, 0.7).drawEllipse(-58, -66, 7, 4).endFill();
+  g.beginFill(INK).drawEllipse(-58, -66, 6, 3.5).endFill();
 
   return finishAnimal(c, {
-    dark: 0x24384A,
     eyes: [{ x: -92, y: -32, r: 11, side: -1 }, { x: -58, y: -38, r: 11, side: 1 }],
     mouth: { x: -140, y: 2, w: 20, h: 6, t: 4 }
   });
@@ -561,49 +632,68 @@ function buildTurtle() {
   const c = new PIXI.Container();
   const g = new PIXI.Graphics();
   c.addChild(g);
-  const SH = 0x3F8F5C, SD = 0x2C6A42, SK = 0x8FC96B, SKD = 0x6FAA4E;
+  const SH = 0x89AE62, RIM = 0xA9C77F, SK = 0xC2D896, PL = 0xEAF0CC;
 
   // back flippers
-  g.beginFill(SKD).drawEllipse(78, 84, 40, 22).endFill();
-  g.beginFill(SKD).drawEllipse(-78, 84, 40, 22).endFill();
+  [[-78, 84], [78, 84]].forEach(p => {
+    g.lineStyle({ width: 4, color: INK });
+    g.beginFill(SK).drawEllipse(p[0], p[1], 40, 22).endFill();
+    g.lineStyle(0);
+  });
 
   // tail
+  g.lineStyle({ width: 4, color: INK, join: 'round' });
   g.beginFill(SK).moveTo(105, 40).lineTo(140, 52).lineTo(104, 62).closePath().endFill();
+  g.lineStyle(0);
 
-  // body
+  // body with flat plastron band
+  g.lineStyle({ width: 5, color: INK });
   g.beginFill(SK).drawEllipse(0, 48, 104, 44).endFill();
+  g.lineStyle(0);
+  g.beginFill(PL).drawEllipse(0, 60, 82, 24).endFill();
+  g.lineStyle({ width: 2.5, color: INK, alpha: 0.85, cap: 'round' });
+  g.moveTo(-58, 52); g.lineTo(58, 52);
+  g.moveTo(-66, 64); g.lineTo(66, 64);
+  g.lineStyle(0);
 
   // head + neck
+  g.lineStyle({ width: 5, color: INK });
   g.beginFill(SK).drawEllipse(-98, 24, 44, 30).endFill();
   g.beginFill(SK).drawEllipse(-128, 8, 40, 34).endFill();
-  g.beginFill(SKD, 0.5).drawEllipse(-142, 22, 20, 10).endFill();
+  g.lineStyle(0);
 
   // front flippers
-  g.beginFill(SK).drawEllipse(-58, 78, 44, 24).endFill();
-  g.beginFill(SKD, 0.35).drawEllipse(-58, 82, 30, 12).endFill();
-  g.beginFill(SK).drawEllipse(58, 78, 44, 24).endFill();
+  [[-58, 78], [58, 78]].forEach(p => {
+    g.lineStyle({ width: 5, color: INK });
+    g.beginFill(SK).drawEllipse(p[0], p[1], 44, 24).endFill();
+    g.lineStyle(0);
+    g.lineStyle({ width: 2.5, color: INK, alpha: 0.85, cap: 'round' });
+    g.moveTo(p[0] - 22, p[1] - 4); g.quadraticCurveTo(p[0], p[1] - 12, p[0] + 22, p[1] - 2);
+    g.lineStyle(0);
+  });
 
-  // shell
-  g.beginFill(SD).drawEllipse(0, -4, 122, 86).endFill();
-  g.beginFill(SH).drawEllipse(0, -8, 112, 78).endFill();
-  // hexagon scutes
+  // shell: outlined rim + dome
+  g.lineStyle({ width: 5, color: INK });
+  g.beginFill(RIM).drawEllipse(0, -4, 122, 86).endFill();
+  g.lineStyle(0);
+  g.lineStyle({ width: 4, color: INK });
+  g.beginFill(SH).drawEllipse(0, -8, 100, 68).endFill();
+  g.lineStyle(0);
+  // hexagon scutes as clean ink lines
   const hex = (cx, cy, r) => {
     g.moveTo(cx + r, cy);
     for (let i = 1; i <= 6; i++) g.lineTo(cx + r * Math.cos(i * Math.PI / 3), cy + r * Math.sin(i * Math.PI / 3));
     g.closePath();
   };
-  g.beginFill(SD, 0.55);
-  hex(0, -22, 26); hex(-50, -6, 22); hex(50, -6, 22); hex(-26, 34, 20); hex(26, 34, 20); hex(0, -66, 18);
+  g.beginFill(0x76994F);
+  hex(0, -20, 27);
   g.endFill();
-  g.lineStyle({ width: 3, color: 0x255A38, alpha: 0.5 });
-  hex(0, -22, 26); hex(-50, -6, 22); hex(50, -6, 22);
+  g.lineStyle({ width: 3, color: INK, alpha: 0.9, join: 'round' });
+  hex(0, -20, 27); hex(-52, -8, 22); hex(52, -8, 22); hex(-27, 30, 20); hex(27, 30, 20); hex(0, -62, 18);
   g.lineStyle(0);
-  // shell shine
-  g.beginFill(0xFFFFFF, 0.16).drawEllipse(-42, -46, 34, 16).endFill();
 
   // Eyes must stay forward of x=-110, where the shell edge starts covering the head.
   return finishAnimal(c, {
-    dark: 0x1F3A22,
     eyes: [{ x: -148, y: 0, r: 10, side: -1 }, { x: -120, y: -2, r: 10, side: 1 }],
     mouth: { x: -142, y: 24, w: 16, h: 6, t: 4 }
   });
@@ -613,53 +703,80 @@ function buildHorse() {
   const c = new PIXI.Container();
   const g = new PIXI.Graphics();
   c.addChild(g);
-  const BR = 0x9E6038, DK = 0x7A4726, MN = 0x4A3020, HF = 0x3A2C22;
+  const BR = 0xB07C4E, MN = 0x5A4030, HF = 0x453425, MZ = 0xD8AC80, PK = 0xE0A9C0;
 
   // tail
+  g.lineStyle({ width: 5, color: INK, join: 'round' });
   g.beginFill(MN);
   g.moveTo(104, 0); g.bezierCurveTo(146, 6, 152, 70, 128, 106);
   g.bezierCurveTo(118, 74, 106, 44, 96, 24); g.closePath(); g.endFill();
+  g.lineStyle(0);
+  g.lineStyle({ width: 2.5, color: INK, alpha: 0.7, cap: 'round' });
+  g.moveTo(112, 10); g.bezierCurveTo(136, 30, 138, 66, 126, 96);
+  g.lineStyle(0);
 
   // back legs
   [62, 88].forEach(x => {
-    g.beginFill(DK).drawRoundedRect(x - 12, 46, 24, 78, 9).endFill();
+    g.lineStyle({ width: 4, color: INK });
+    g.beginFill(BR).drawRoundedRect(x - 12, 46, 24, 78, 9).endFill();
     g.beginFill(HF).drawRoundedRect(x - 13, 118, 26, 14, 4).endFill();
+    g.lineStyle(0);
   });
   // front legs
   [-58, -32].forEach(x => {
+    g.lineStyle({ width: 4, color: INK });
     g.beginFill(BR).drawRoundedRect(x - 12, 44, 24, 76, 9).endFill();
     g.beginFill(HF).drawRoundedRect(x - 13, 116, 26, 14, 4).endFill();
+    g.lineStyle(0);
   });
 
   // body
+  g.lineStyle({ width: 5, color: INK });
   g.beginFill(BR).drawEllipse(10, 22, 108, 66).endFill();
-  g.beginFill(0xC08655, 0.5).drawEllipse(10, 46, 78, 34).endFill();
+  g.lineStyle(0);
 
   // neck
+  g.lineStyle({ width: 5, color: INK, join: 'round' });
   g.beginFill(BR);
   g.moveTo(-96, 4); g.bezierCurveTo(-92, -50, -78, -84, -50, -96);
   g.lineTo(-16, -46); g.bezierCurveTo(-30, -18, -48, 6, -60, 24); g.closePath(); g.endFill();
+  g.lineStyle(0);
 
   // head
+  g.lineStyle({ width: 5, color: INK, join: 'round' });
   g.beginFill(BR);
   g.moveTo(-52, -96); g.bezierCurveTo(-84, -128, -128, -132, -140, -108);
   g.bezierCurveTo(-148, -92, -128, -74, -104, -68);
   g.bezierCurveTo(-80, -62, -58, -70, -50, -84); g.closePath(); g.endFill();
-  // muzzle
-  g.beginFill(0xC7906A).drawEllipse(-128, -100, 22, 17).endFill();
-  g.beginFill(0x5C3A24).drawEllipse(-136, -102, 4, 5).endFill();
+  g.lineStyle(0);
+  // muzzle with nostril
+  g.lineStyle({ width: 4, color: INK });
+  g.beginFill(MZ).drawEllipse(-128, -100, 22, 17).endFill();
+  g.lineStyle(0);
+  g.beginFill(INK).drawEllipse(-136, -103, 4, 5).endFill();
   // ears
+  g.lineStyle({ width: 4, color: INK, join: 'round' });
   g.beginFill(BR).moveTo(-58, -104).lineTo(-52, -140).lineTo(-36, -110).closePath().endFill();
-  g.beginFill(0xE0A9C0).moveTo(-54, -110).lineTo(-51, -132).lineTo(-43, -113).closePath().endFill();
+  g.lineStyle(0);
+  g.beginFill(PK).moveTo(-54, -110).lineTo(-51, -130).lineTo(-44, -113).closePath().endFill();
 
-  // mane
+  // mane + forelock
+  g.lineStyle({ width: 5, color: INK, join: 'round' });
   g.beginFill(MN);
   g.moveTo(-50, -110); g.bezierCurveTo(-30, -100, -14, -60, -8, -20);
   g.bezierCurveTo(-24, -40, -34, -34, -44, -12);
   g.bezierCurveTo(-52, -50, -58, -84, -62, -104); g.closePath(); g.endFill();
+  g.lineStyle(0);
+  g.lineStyle({ width: 2.5, color: INK, alpha: 0.7, cap: 'round' });
+  g.moveTo(-48, -100); g.bezierCurveTo(-36, -76, -30, -52, -26, -30);
+  g.lineStyle(0);
+  g.lineStyle({ width: 4, color: INK, join: 'round' });
+  g.beginFill(MN);
+  g.moveTo(-56, -122); g.bezierCurveTo(-76, -128, -84, -118, -80, -108);
+  g.bezierCurveTo(-72, -114, -62, -116, -52, -112); g.closePath(); g.endFill();
+  g.lineStyle(0);
 
   return finishAnimal(c, {
-    dark: 0x2E1D12,
     eyes: [{ x: -104, y: -104, r: 10, side: -1 }, { x: -74, y: -96, r: 10, side: 1 }],
     mouth: { x: -132, y: -86, w: 14, h: 5, t: 4 }
   });
@@ -669,46 +786,70 @@ function buildChicken() {
   const c = new PIXI.Container();
   const g = new PIXI.Graphics();
   c.addChild(g);
-  const BD = 0xFDF4E3, SH = 0xE8D9C0, RD = 0xD8433C, OR = 0xF2A03D;
+  const BD = 0xFCF7EC, WG = 0xE8DFC8, RD = 0xE05248, OR = 0xF0A03E;
 
   // tail feathers
-  g.beginFill(SH);
+  g.lineStyle({ width: 5, color: INK, join: 'round' });
+  g.beginFill(WG);
   g.moveTo(78, -10); g.bezierCurveTo(124, -44, 146, -22, 128, 10);
   g.bezierCurveTo(146, -4, 152, 20, 120, 34); g.closePath(); g.endFill();
+  g.lineStyle(0);
+  g.lineStyle({ width: 2.5, color: INK, alpha: 0.7, cap: 'round' });
+  g.moveTo(84, -6); g.quadraticCurveTo(116, -28, 130, -16);
+  g.lineStyle(0);
 
-  // legs
+  // legs: ink outline under orange strokes
   [[-24, 0], [22, 0]].forEach(p => {
-    g.lineStyle({ width: 7, color: OR, cap: 'round' });
-    g.moveTo(p[0], 78); g.lineTo(p[0], 118);
-    g.moveTo(p[0], 118); g.lineTo(p[0] - 14, 130);
-    g.moveTo(p[0], 118); g.lineTo(p[0], 132);
-    g.moveTo(p[0], 118); g.lineTo(p[0] + 14, 130);
-    g.lineStyle(0);
+    [[11, INK], [7, OR]].forEach(st => {
+      g.lineStyle({ width: st[0], color: st[1], cap: 'round' });
+      g.moveTo(p[0], 78); g.lineTo(p[0], 118);
+      g.moveTo(p[0], 118); g.lineTo(p[0] - 14, 130);
+      g.moveTo(p[0], 118); g.lineTo(p[0], 132);
+      g.moveTo(p[0], 118); g.lineTo(p[0] + 14, 130);
+      g.lineStyle(0);
+    });
   });
 
   // body
+  g.lineStyle({ width: 5, color: INK });
   g.beginFill(BD).drawEllipse(6, 16, 92, 82).endFill();
-  // wing
-  g.beginFill(SH).drawEllipse(24, 22, 52, 40).endFill();
-  g.lineStyle({ width: 3, color: 0xD3C2A4, alpha: 0.8, cap: 'round' });
-  g.moveTo(-4, 34); g.lineTo(58, 26);
-  g.moveTo(0, 48); g.lineTo(56, 40);
   g.lineStyle(0);
 
-  // head
+  // wing with two feather lines
+  g.lineStyle({ width: 4, color: INK });
+  g.beginFill(WG).drawEllipse(24, 22, 52, 40).endFill();
+  g.lineStyle(0);
+  g.lineStyle({ width: 2.5, color: INK, alpha: 0.7, cap: 'round' });
+  g.moveTo(-6, 30); g.quadraticCurveTo(30, 24, 62, 20);
+  g.moveTo(-2, 44); g.quadraticCurveTo(30, 40, 60, 34);
+  g.lineStyle(0);
+
+  // neck + head
+  g.beginFill(BD).drawEllipse(-56, -26, 26, 34).endFill();
+  g.lineStyle({ width: 5, color: INK });
   g.beginFill(BD).drawCircle(-62, -66, 47).endFill();
+  g.lineStyle(0);
+
   // comb
+  g.lineStyle({ width: 4, color: INK });
   g.beginFill(RD);
   g.drawCircle(-84, -110, 13); g.drawCircle(-64, -120, 15); g.drawCircle(-44, -110, 12);
   g.endFill();
+  g.lineStyle(0);
   // wattle
-  g.beginFill(RD).drawEllipse(-88, -32, 10, 15).drawEllipse(-76, -28, 9, 13).endFill();
-  // beak
+  g.lineStyle({ width: 3.5, color: INK });
+  g.beginFill(RD).drawEllipse(-88, -32, 10, 15).endFill();
+  g.beginFill(RD).drawEllipse(-76, -28, 9, 13).endFill();
+  g.lineStyle(0);
+  // beak with parting line
+  g.lineStyle({ width: 4, color: INK, join: 'round' });
   g.beginFill(OR).moveTo(-100, -62).lineTo(-138, -54).lineTo(-100, -44).closePath().endFill();
-  g.beginFill(0xD9862B).moveTo(-100, -53).lineTo(-138, -54).lineTo(-100, -44).closePath().endFill();
+  g.lineStyle(0);
+  g.lineStyle({ width: 2.5, color: INK, cap: 'round' });
+  g.moveTo(-136, -54); g.lineTo(-102, -52);
+  g.lineStyle(0);
 
   return finishAnimal(c, {
-    dark: 0x2E241A,
     eyes: [{ x: -84, y: -74, r: 10, side: -1 }, { x: -50, y: -76, r: 10, side: 1 }],
     mouth: { x: -70, y: -44, w: 10, h: 4, t: 3 }
   });
@@ -718,44 +859,239 @@ function buildDuck() {
   const c = new PIXI.Container();
   const g = new PIXI.Graphics();
   c.addChild(g);
-  const BD = 0xFFD95E, SH = 0xF0BE3C, OR = 0xF2803D;
+  const BD = 0xFFD866, WG = 0xEDBE45, OR = 0xF08C3C, ORD = 0xD0702A;
 
   // tail
+  g.lineStyle({ width: 5, color: INK, join: 'round' });
   g.beginFill(BD).moveTo(80, 4).lineTo(128, -18).lineTo(120, 22).closePath().endFill();
+  g.lineStyle(0);
 
-  // feet
+  // webbed feet with toe lines
   [[-22, 0], [24, 0]].forEach(p => {
+    const x = p[0];
+    g.lineStyle({ width: 4, color: INK, join: 'round' });
     g.beginFill(OR);
-    g.moveTo(p[0], 92); g.lineTo(p[0] - 18, 128); g.lineTo(p[0] + 18, 128); g.closePath();
+    g.moveTo(x, 92); g.lineTo(x - 18, 128); g.lineTo(x + 18, 128); g.closePath();
     g.endFill();
-    g.beginFill(OR).drawRoundedRect(p[0] - 4, 78, 8, 22, 3).endFill();
+    g.beginFill(OR).drawRoundedRect(x - 4, 78, 8, 22, 3).endFill();
+    g.lineStyle(0);
+    g.lineStyle({ width: 2.5, color: INK, alpha: 0.75, cap: 'round' });
+    g.moveTo(x, 98); g.lineTo(x - 8, 124);
+    g.moveTo(x, 98); g.lineTo(x + 8, 124);
+    g.lineStyle(0);
   });
 
-  // body
+  // body with flat belly patch
+  g.lineStyle({ width: 5, color: INK });
   g.beginFill(BD).drawEllipse(6, 20, 96, 74).endFill();
-  // wing
-  g.beginFill(SH);
+  g.lineStyle(0);
+  g.beginFill(0xFFF4D0).drawEllipse(-30, 44, 44, 24).endFill();
+
+  // wing with feather lines
+  g.lineStyle({ width: 5, color: INK, join: 'round' });
+  g.beginFill(WG);
   g.moveTo(-30, 6); g.bezierCurveTo(20, -14, 76, 4, 68, 34);
   g.bezierCurveTo(30, 58, -16, 42, -30, 6); g.closePath(); g.endFill();
-  g.lineStyle({ width: 3, color: 0xDCA92B, alpha: 0.75, cap: 'round' });
-  g.moveTo(-6, 40); g.lineTo(52, 30);
-  g.moveTo(2, 50); g.lineTo(56, 40);
+  g.lineStyle(0);
+  g.lineStyle({ width: 2.5, color: INK, alpha: 0.7, cap: 'round' });
+  g.moveTo(-8, 34); g.quadraticCurveTo(28, 30, 58, 24);
+  g.moveTo(0, 46); g.quadraticCurveTo(30, 42, 56, 34);
   g.lineStyle(0);
 
   // neck + head
   g.beginFill(BD).drawEllipse(-56, -22, 30, 40).endFill();
+  g.lineStyle({ width: 5, color: INK });
   g.beginFill(BD).drawCircle(-70, -68, 45).endFill();
-  // bill
+  g.lineStyle(0);
+  // bill with nostril
+  g.lineStyle({ width: 4, color: INK });
   g.beginFill(OR).drawEllipse(-118, -56, 30, 13).endFill();
-  g.beginFill(0xD96A2C).drawEllipse(-124, -52, 22, 5).endFill();
-  g.beginFill(0xD96A2C).drawCircle(-104, -62, 2.5).endFill();
+  g.lineStyle(0);
+  g.beginFill(ORD).drawEllipse(-124, -52, 22, 5).endFill();
+  g.beginFill(INK).drawEllipse(-108, -61, 3.5, 2).endFill();
   // cheek blush
-  g.beginFill(0xF0A05E, 0.35).drawCircle(-42, -56, 13).endFill();
+  g.beginFill(0xF2A9B8, 0.5).drawCircle(-42, -56, 12).endFill();
 
   return finishAnimal(c, {
-    dark: 0x3A2A12,
     eyes: [{ x: -92, y: -78, r: 10, side: -1 }, { x: -58, y: -80, r: 10, side: 1 }],
     mouth: { x: -100, y: -44, w: 11, h: 4, t: 3 }
+  });
+}
+
+function buildSnake() {
+  const c = new PIXI.Container();
+  const g = new PIXI.Graphics();
+  c.addChild(g);
+  const GN = 0x8CBF5E, BL = 0xEAF0C0;
+
+  // tail tip poking out of the bottom coil
+  g.lineStyle({ width: 24, color: INK, cap: 'round' });
+  g.moveTo(112, 88); g.quadraticCurveTo(150, 78, 162, 52);
+  g.lineStyle({ width: 14, color: GN, cap: 'round' });
+  g.moveTo(112, 88); g.quadraticCurveTo(150, 78, 162, 52);
+  g.lineStyle(0);
+  g.beginFill(INK).drawCircle(162, 52, 8).endFill();
+
+  // three stacked coils, biggest at the bottom
+  const coil = (cx, cy, rx, ry) => {
+    g.lineStyle({ width: 5, color: INK });
+    g.beginFill(GN).drawEllipse(cx, cy, rx, ry).endFill();
+    g.lineStyle(0);
+    g.beginFill(BL).drawEllipse(cx, cy + ry * 0.42, rx * 0.72, ry * 0.36).endFill();
+  };
+  coil(10, 92, 118, 40);
+  coil(16, 52, 92, 34);
+  coil(22, 16, 66, 28);
+  // diamond pattern along the coils
+  g.beginFill(INK);
+  leaf(g, -70, 78, 26, 9, 0.1); leaf(g, 10, 70, 26, 9, 0); leaf(g, 90, 78, 26, 9, -0.1);
+  leaf(g, -50, 40, 22, 8, 0.1); leaf(g, 55, 40, 22, 8, -0.1);
+  leaf(g, 0, 2, 20, 8, 0); leaf(g, 55, 10, 18, 7, -0.15);
+  g.endFill();
+
+  // neck rising from the top coil
+  g.lineStyle({ width: 30, color: INK, cap: 'round' });
+  g.moveTo(-16, 12); g.bezierCurveTo(-50, -4, -68, -32, -74, -62);
+  g.lineStyle({ width: 20, color: GN, cap: 'round' });
+  g.moveTo(-16, 12); g.bezierCurveTo(-50, -4, -68, -32, -74, -62);
+  g.lineStyle(0);
+
+  // head
+  g.lineStyle({ width: 5, color: INK });
+  g.beginFill(GN).drawEllipse(-84, -84, 33, 26).endFill();
+  g.lineStyle(0);
+  // forked tongue
+  g.lineStyle({ width: 3, color: 0xD84A54, cap: 'round' });
+  g.moveTo(-115, -76); g.lineTo(-136, -72);
+  g.moveTo(-136, -72); g.lineTo(-146, -66);
+  g.moveTo(-136, -72); g.lineTo(-144, -80);
+  g.lineStyle(0);
+
+  return finishAnimal(c, {
+    eyes: [{ x: -96, y: -90, r: 9, side: -1 }, { x: -72, y: -88, r: 9, side: 1 }],
+    mouth: { x: -102, y: -70, w: 12, h: 5, t: 3.5 }
+  });
+}
+
+function buildLizard() {
+  const c = new PIXI.Container();
+  const g = new PIXI.Graphics();
+  c.addChild(g);
+  const GN = 0x5FC08B, DK = 0x3F9E6C, BL = 0xE4F2D8;
+
+  // curling tail
+  g.lineStyle({ width: 30, color: INK, cap: 'round' });
+  g.moveTo(75, 55); g.bezierCurveTo(140, 60, 172, 30, 158, -6);
+  g.lineStyle({ width: 20, color: GN, cap: 'round' });
+  g.moveTo(75, 55); g.bezierCurveTo(140, 60, 172, 30, 158, -6);
+  g.lineStyle(0);
+  g.beginFill(INK).drawCircle(158, -6, 10).endFill();
+  g.beginFill(GN).drawCircle(158, -6, 5.5).endFill();
+
+  // legs with round toe pads
+  [[-52, 96, -1], [56, 94, 1]].forEach(p => {
+    g.lineStyle({ width: 4, color: INK });
+    g.beginFill(GN).drawRoundedRect(p[0] - 13, p[1] - 34, 26, 52, 11).endFill();
+    g.lineStyle(0);
+    [[-12, 0], [0, 4], [12, 0]].forEach(t => {
+      g.lineStyle({ width: 8, color: INK, cap: 'round' });
+      g.moveTo(p[0], p[1] + 12); g.lineTo(p[0] + t[0] * 1.6, p[1] + 24 + t[1]);
+      g.lineStyle(0);
+      g.beginFill(GN).drawCircle(p[0] + t[0] * 1.6, p[1] + 24 + t[1], 5.5).endFill();
+    });
+  });
+
+  // body
+  g.lineStyle({ width: 5, color: INK });
+  g.beginFill(GN).drawEllipse(0, 48, 95, 48).endFill();
+  g.lineStyle(0);
+  g.beginFill(BL).drawEllipse(-6, 74, 64, 20).endFill();
+
+  // back bumps
+  g.lineStyle({ width: 4, color: INK });
+  g.beginFill(GN);
+  g.drawCircle(-38, -2, 10); g.drawCircle(2, -8, 11); g.drawCircle(42, -2, 10);
+  g.endFill();
+  g.lineStyle(0);
+
+  // head
+  g.lineStyle({ width: 5, color: INK });
+  g.beginFill(GN).drawEllipse(-105, 2, 48, 37).endFill();
+  g.lineStyle(0);
+  // spots
+  g.beginFill(DK);
+  g.drawCircle(-30, 30, 7); g.drawCircle(30, 42, 8); g.drawCircle(62, 24, 6);
+  g.drawCircle(-64, 42, 6); g.drawCircle(-92, -22, 5);
+  g.endFill();
+  // nostril
+  g.beginFill(INK).drawCircle(-142, -6, 2.5).endFill();
+
+  return finishAnimal(c, {
+    eyes: [{ x: -118, y: -14, r: 10, side: -1 }, { x: -90, y: -16, r: 10, side: 1 }],
+    mouth: { x: -128, y: 14, w: 14, h: 5, t: 4 }
+  });
+}
+
+function buildFrog() {
+  const c = new PIXI.Container();
+  const g = new PIXI.Graphics();
+  c.addChild(g);
+  const GN = 0x6FBF5A, DK = 0x4E9C40, BL = 0xF2F5D8;
+
+  // haunches
+  [[-78, 72], [78, 72]].forEach(p => {
+    g.lineStyle({ width: 5, color: INK });
+    g.beginFill(GN).drawEllipse(p[0], p[1], 48, 40).endFill();
+    g.lineStyle(0);
+  });
+  // webbed feet
+  [[-88, 116, -1], [88, 116, 1]].forEach(p => {
+    g.lineStyle({ width: 4, color: INK, join: 'round' });
+    g.beginFill(GN);
+    g.moveTo(p[0], p[1] - 10);
+    g.lineTo(p[0] + p[2] * 30, p[1] + 4); g.lineTo(p[0] + p[2] * 10, p[1] + 8);
+    g.lineTo(p[0] + p[2] * 26, p[1] + 16); g.lineTo(p[0] - p[2] * 6, p[1] + 12);
+    g.closePath(); g.endFill();
+    g.lineStyle(0);
+  });
+
+  // body
+  g.lineStyle({ width: 5, color: INK });
+  g.beginFill(GN).drawEllipse(0, 40, 92, 68).endFill();
+  g.lineStyle(0);
+  // belly
+  g.beginFill(BL).drawEllipse(0, 62, 60, 38).endFill();
+  g.lineStyle({ width: 3, color: INK, alpha: 0.85, cap: 'round' });
+  g.moveTo(-58, 52); g.quadraticCurveTo(0, 20, 58, 52);
+  g.lineStyle(0);
+
+  // front legs resting on the belly
+  [[-34, 1], [34, -1]].forEach(p => {
+    g.lineStyle({ width: 4, color: INK });
+    g.beginFill(GN).drawRoundedRect(p[0] - 10, 74, 20, 42, 10).endFill();
+    g.lineStyle(0);
+    [[-8, 0], [0, 3], [8, 0]].forEach(t => {
+      g.beginFill(GN).lineStyle({ width: 3, color: INK });
+      g.drawCircle(p[0] + t[0], 118 + t[1], 5);
+      g.endFill(); g.lineStyle(0);
+    });
+  });
+
+  // eye bumps
+  [-42, 42].forEach(x => {
+    g.lineStyle({ width: 5, color: INK });
+    g.beginFill(GN).drawCircle(x, -52, 24).endFill();
+    g.lineStyle(0);
+  });
+  // back spots + cheek blush
+  g.beginFill(DK);
+  g.drawCircle(-62, 16, 7); g.drawCircle(64, 20, 7); g.drawCircle(0, -14, 6);
+  g.endFill();
+  g.beginFill(0xF2A9B8, 0.6).drawCircle(-62, -6, 11).drawCircle(62, -6, 11).endFill();
+
+  return finishAnimal(c, {
+    eyes: [{ x: -42, y: -52, r: 12, side: -1 }, { x: 42, y: -52, r: 12, side: 1 }],
+    mouth: { x: 0, y: -10, w: 30, h: 8, t: 5 }
   });
 }
 
@@ -979,6 +1315,137 @@ function habPond() {
   return c;
 }
 
+function habDesert() {
+  const c = new PIXI.Container();
+  const sky = new PIXI.Sprite(gradTex([[0, '#FFE3A0'], [0.55, '#F7C87E'], [1, '#EBAA62']]));
+  sky.width = W; sky.height = H; c.addChild(sky);
+  const g = new PIXI.Graphics(); c.addChild(g);
+  // sun
+  g.beginFill(0xFFF3C4, 0.95).drawCircle(806, 96, 48).endFill();
+  g.beginFill(0xFFF8DC, 0.35).drawCircle(806, 96, 78).endFill();
+  // far mesas
+  g.beginFill(0xD98D5A, 0.75);
+  g.drawRoundedRect(60, 240, 170, 130, 14); g.drawRoundedRect(640, 260, 140, 110, 12);
+  g.endFill();
+  g.beginFill(0xC97C4A, 0.6).drawRect(60, 300, 170, 70).drawRect(640, 312, 140, 58).endFill();
+  // dunes
+  g.beginFill(0xF0CE8E).drawEllipse(220, 470, 420, 130).endFill();
+  g.beginFill(0xE8C078).drawEllipse(760, 490, 460, 150).endFill();
+  g.beginFill(0xF5D89E).drawEllipse(W / 2, H + 40, W * 0.85, 200).endFill();
+  // cacti
+  [[140, 350], [830, 330]].forEach(p => {
+    const x = p[0], y = p[1];
+    g.beginFill(0x4E9B57);
+    g.drawRoundedRect(x - 13, y, 26, 130, 13);
+    g.drawRoundedRect(x - 52, y + 30, 16, 46, 8); g.drawRoundedRect(x - 52, y + 30, 46, 16, 8);
+    g.drawRoundedRect(x + 36, y + 52, 16, 42, 8); g.drawRoundedRect(x + 10, y + 52, 42, 16, 8);
+    g.endFill();
+    g.beginFill(0x3D7E46, 0.5).drawRoundedRect(x + 2, y, 11, 130, 6).endFill();
+  });
+  // rocks + pebbles
+  g.beginFill(0xC9995E).drawEllipse(560, 560, 60, 26).drawEllipse(90, 590, 50, 22).endFill();
+  g.beginFill(0xB8854E, 0.7);
+  for (let i = 0; i < 22; i++) g.drawCircle((i * 167) % W, 480 + (i * 83) % 140, 3 + (i % 3) * 2);
+  g.endFill();
+  return c;
+}
+
+function habRocks() {
+  const c = new PIXI.Container();
+  const sky = new PIXI.Sprite(gradTex([[0, '#A8DCF0'], [0.5, '#D8EEF5'], [1, '#EAD9B0']]));
+  sky.width = W; sky.height = H; c.addChild(sky);
+  const g = new PIXI.Graphics(); c.addChild(g);
+  g.beginFill(0xFFF3B8, 0.95).drawCircle(120, 92, 42).endFill();
+  g.beginFill(0xFFFFFF, 0.85);
+  g.drawEllipse(620, 90, 58, 22).drawEllipse(664, 80, 42, 18);
+  g.endFill();
+  // canyon walls
+  g.beginFill(0xC9764E).drawRoundedRect(-40, 170, 300, 260, 26).endFill();
+  g.beginFill(0xB86842).drawRect(-40, 280, 300, 150).endFill();
+  g.beginFill(0xD98D5A).drawRoundedRect(700, 150, 300, 280, 26).endFill();
+  g.beginFill(0xC97C4A).drawRect(700, 270, 300, 160).endFill();
+  // strata lines
+  g.lineStyle({ width: 4, color: 0xA05838, alpha: 0.5 });
+  g.moveTo(-40, 250); g.lineTo(260, 250);
+  g.moveTo(-40, 330); g.lineTo(260, 330);
+  g.moveTo(700, 235); g.lineTo(1000, 235);
+  g.moveTo(700, 320); g.lineTo(1000, 320);
+  g.lineStyle(0);
+  // sandy floor
+  g.beginFill(0xE0BC84).drawRect(0, 410, W, H - 410).endFill();
+  g.beginFill(0xD4AC70, 0.8).drawEllipse(W / 2, H + 40, W, 190).endFill();
+  // sun-warmed boulders
+  [[260, 460, 70, 34], [700, 480, 88, 40], [480, 590, 60, 26]].forEach(r => {
+    g.beginFill(0xB8865A).drawEllipse(r[0], r[1], r[2], r[3]).endFill();
+    g.beginFill(0xD9A878, 0.6).drawEllipse(r[0] - r[2] * 0.2, r[1] - r[3] * 0.3, r[2] * 0.6, r[3] * 0.5).endFill();
+  });
+  // dry grass tufts
+  g.lineStyle({ width: 3, color: 0xB89A48, alpha: 0.9, cap: 'round' });
+  for (let i = 0; i < 24; i++) {
+    const x = (i * 89) % W, y = 440 + (i * 61) % 170;
+    g.moveTo(x, y); g.lineTo(x - 5, y - 15);
+    g.moveTo(x, y); g.lineTo(x + 6, y - 13);
+  }
+  g.lineStyle(0);
+  return c;
+}
+
+function habSwamp() {
+  const c = new PIXI.Container();
+  const sky = new PIXI.Sprite(gradTex([[0, '#B7E0C8'], [0.5, '#D2ECC8'], [1, '#94C488']]));
+  sky.width = W; sky.height = H; c.addChild(sky);
+  const g = new PIXI.Graphics(); c.addChild(g);
+  // hazy sun
+  g.beginFill(0xFFF9D0, 0.8).drawCircle(180, 100, 40).endFill();
+  // mossy trees with hanging vines
+  [[720, 200], [880, 230]].forEach(p => {
+    g.beginFill(0x6B4A2C).drawRect(p[0] - 10, p[1], 20, 140).endFill();
+    g.beginFill(0x4E8B47, 0.95).drawEllipse(p[0], p[1] - 16, 84, 48).endFill();
+    g.lineStyle({ width: 4, color: 0x3E7038, alpha: 0.8, cap: 'round' });
+    [-40, 0, 40].forEach(o => { g.moveTo(p[0] + o, p[1] + 8); g.lineTo(p[0] + o - 4, p[1] + 74); });
+    g.lineStyle(0);
+  });
+  // bank
+  g.beginFill(0x7AB35C).drawRect(0, 330, W, H - 330).endFill();
+  // murky water
+  g.beginFill(0x5E9E6E).drawEllipse(W / 2, 480, 450, 170).endFill();
+  g.beginFill(0x74B584).drawEllipse(W / 2, 472, 415, 148).endFill();
+  g.beginFill(0xFFFFFF, 0.15);
+  for (let i = 0; i < 8; i++) g.drawEllipse(180 + i * 82, 420 + (i % 3) * 55, 44, 5);
+  g.endFill();
+  // half-sunk log
+  g.beginFill(0x6B4A2C).drawRoundedRect(600, 390, 190, 34, 16).endFill();
+  g.beginFill(0x54381F).drawEllipse(790, 407, 14, 17).endFill();
+  g.beginFill(0x8A6238, 0.8).drawEllipse(790, 407, 8, 10).endFill();
+  // lily pads with flowers
+  [[260, 430], [430, 550], [660, 520], [180, 560]].forEach((p, i) => {
+    g.beginFill(0x3E8B4E, 0.95).drawEllipse(p[0], p[1], 34, 17).endFill();
+    g.beginFill(0x2F6B3C, 0.9).moveTo(p[0], p[1]).lineTo(p[0] + 28, p[1] - 9).lineTo(p[0] + 28, p[1] + 9).closePath().endFill();
+    if (i % 2 === 0) {
+      g.beginFill(0xF2A9B8).drawCircle(p[0] - 10, p[1] - 8, 7).endFill();
+      g.beginFill(0xFFF3C4).drawCircle(p[0] - 10, p[1] - 8, 3).endFill();
+    }
+  });
+  // cattails
+  g.lineStyle({ width: 4, color: 0x4E8B3C, cap: 'round' });
+  for (let i = 0; i < 8; i++) {
+    const x = i < 4 ? 50 + i * 26 : 810 + (i - 4) * 28;
+    g.moveTo(x, 580); g.bezierCurveTo(x - 8, 500, x + 8, 440, x, 390);
+  }
+  g.lineStyle(0);
+  g.beginFill(0x8A5A2E);
+  for (let i = 0; i < 8; i++) {
+    const x = i < 4 ? 50 + i * 26 : 810 + (i - 4) * 28;
+    g.drawRoundedRect(x - 5, 372, 10, 32, 5);
+  }
+  g.endFill();
+  // fireflies
+  g.beginFill(0xFFF06A, 0.8);
+  for (let i = 0; i < 9; i++) g.drawCircle(120 + (i * 173) % 720, 240 + (i * 97) % 140, 3);
+  g.endFill();
+  return c;
+}
+
 /* ==================================================================
    ANIMAL DEFINITIONS
    ================================================================== */
@@ -986,80 +1453,155 @@ const ANIMALS = [
   {
     id: 'tiger', name: 'Tiger', icon: '🐯', wild: true, habitatName: 'the jungle',
     colour: 0xF29434, build: buildTiger, habitat: habJungle,
-    scale: 1, y: 380,
+    scale: 1, y: 380, shadowY: 132, shadowW: 300,
     intro: 'Raja the tiger limped out of the jungle. He looks so sad — can you help?',
     problems: [
-      { x: -58, y: 116, icon: '🐾', tool: '🩹', label: 'Sore paw',      hint: 'Tap the sore paw to clean and bandage it' },
-      { x: 92,  y: 40,  icon: '🦟', tool: '🧴', label: 'Itchy bites',   hint: 'Tap the itchy bites to soothe them' },
-      { x: 150, y: -22, icon: '🌵', tool: '🤏', label: 'Thorn in tail', hint: 'Tap the thorn to pull it out gently' },
-      { x: -92, y: -14, icon: '🪵', tool: '🪥', label: 'Matted fur',    hint: 'Tap the matted fur to brush it out' }
+      { x: -58, y: 116, icon: '🐾', tool: '🩹', toolName: 'Bandage', act: 'scrub', need: 480, fx: '✨',
+        label: 'Sore paw', hint: 'Rub the bandage gently over the sore paw' },
+      { x: 92,  y: 40,  icon: '🦟', tool: '🧴', toolName: 'Cream', act: 'scrub', need: 700, fx: '🫧',
+        label: 'Itchy bites', hint: 'Rub the cream over the itchy bites' },
+      { x: 150, y: -22, icon: '🌵', act: 'pull', need: 130,
+        label: 'Thorn in tail', hint: 'Grab the thorn and pull it right out!' },
+      { x: -92, y: -14, icon: '🧶', tool: '🪥', toolName: 'Brush', act: 'scrub', need: 1200, fx: '✨',
+        label: 'Matted fur', hint: 'Brush back and forth to smooth the matted fur' }
     ],
     foods: [{ e: '🥩', n: 'Meat' }, { e: '🍗', n: 'Chicken' }, { e: '💧', n: 'Water' }]
   },
   {
     id: 'dolphin', name: 'Dolphin', icon: '🐬', wild: true, habitatName: 'the reef',
     colour: 0x6B93B8, build: buildDolphin, habitat: habOcean,
-    scale: 1, y: 360,
+    scale: 1, y: 360, shadowY: 190, shadowW: 240, shadowA: 0.15,
     intro: 'Splash the dolphin swam into some rubbish. She needs your gentle hands.',
     problems: [
-      { x: 30,   y: 18,  icon: '🕸️', tool: '✂️', label: 'Tangled net',   hint: 'Tap the net to cut it away carefully' },
-      { x: 14,   y: -96, icon: '🩹', tool: '🧴', label: 'Scratched fin', hint: 'Tap the scratched fin to treat it' },
-      { x: 86,   y: -30, icon: '☀️', tool: '🧴', label: 'Sunburn patch', hint: 'Tap the sunburn to cool it down' },
-      { x: -150, y: -22, icon: '⭕', tool: '🤏', label: 'Plastic ring',  hint: 'Tap the plastic ring to slip it off' }
+      { x: 30,   y: 18,  icon: '🕸️', act: 'pull', need: 150,
+        label: 'Tangled net', hint: 'Grab the net and pull — keep pulling until it comes off!' },
+      { x: 14,   y: -96, icon: '🩹', tool: '🧴', toolName: 'Gel', act: 'scrub', need: 600, fx: '🫧',
+        label: 'Scratched fin', hint: 'Rub the healing gel on the scratched fin' },
+      { x: 86,   y: -30, icon: '☀️', tool: '🧊', toolName: 'Ice pack', act: 'scrub', need: 700, fx: '❄️',
+        label: 'Sunburn patch', hint: 'Rub the cool ice pack over the sunburn' },
+      { x: -150, y: -22, icon: '⭕', act: 'pull', need: 130,
+        label: 'Plastic ring', hint: 'Grab the plastic ring and pull it free' }
     ],
     foods: [{ e: '🐟', n: 'Fish' }, { e: '🦑', n: 'Squid' }, { e: '🦐', n: 'Shrimp' }]
   },
   {
     id: 'turtle', name: 'Turtle', icon: '🐢', wild: true, habitatName: 'the beach',
     colour: 0x3F8F5C, build: buildTurtle, habitat: habBeach,
-    scale: 1, y: 400,
+    scale: 1, y: 400, shadowY: 108, shadowW: 310,
     intro: 'Shelly the turtle washed up on the sand. Her shell has taken a knock.',
     problems: [
-      { x: 0,    y: -52, icon: '💥', tool: '🩹', label: 'Cracked shell', hint: 'Tap the crack to patch her shell' },
-      { x: -120, y: -22, icon: '🥤', tool: '🤏', label: 'Stuck straw',   hint: 'Tap the straw to pull it out of her nose' },
-      { x: 62,   y: -28, icon: '🐚', tool: '🧽', label: 'Barnacles',     hint: 'Tap the barnacles to scrub them off' },
-      { x: -58,  y: 82,  icon: '🩹', tool: '🧴', label: 'Sore flipper',  hint: 'Tap the sore flipper to rub in cream' }
+      { x: 0,    y: -52, icon: '💥', tool: '🩹', toolName: 'Patch', act: 'scrub', need: 550, fx: '✨',
+        label: 'Cracked shell', hint: 'Rub the patch over the crack to seal it up' },
+      { x: -120, y: -22, icon: '🥤', act: 'pull', need: 140,
+        label: 'Stuck straw', hint: 'Grab the straw and pull it gently out' },
+      { x: 62,   y: -28, icon: '🐚', tool: '🧽', toolName: 'Sponge', act: 'scrub', need: 1000, fx: '🫧',
+        label: 'Barnacles', hint: 'Scrub the sponge over the barnacles again and again' },
+      { x: -58,  y: 82,  icon: '🩹', tool: '🧴', toolName: 'Cream', act: 'scrub', need: 600, fx: '🫧',
+        label: 'Sore flipper', hint: 'Rub cream into the sore flipper' }
     ],
     foods: [{ e: '🥬', n: 'Lettuce' }, { e: '🍓', n: 'Berry' }, { e: '🌿', n: 'Seagrass' }]
   },
   {
     id: 'horse', name: 'Horse', icon: '🐴', wild: false, habitatName: 'the farm',
     colour: 0x9E6038, build: buildHorse, habitat: habFarm,
-    scale: 1, y: 376,
+    scale: 1, y: 376, shadowY: 136, shadowW: 290,
     intro: 'Pepper the horse has been in the field all week and needs a check-up.',
     problems: [
-      { x: -58, y: 122, icon: '🔩', tool: '🔨', label: 'Loose shoe',  hint: 'Tap the loose shoe to nail it back on' },
-      { x: -34, y: -58, icon: '🌾', tool: '🪮', label: 'Tangled mane', hint: 'Tap the tangled mane to comb it out' },
-      { x: 40,  y: 6,   icon: '🦟', tool: '🧴', label: 'Fly bites',   hint: 'Tap the fly bites to soothe them' },
-      { x: 76,  y: 122, icon: '🐾', tool: '🧽', label: 'Muddy hoof',  hint: 'Tap the muddy hoof to clean it out' }
+      { x: -58, y: 122, icon: '🔩', tool: '🔨', toolName: 'Hammer', act: 'scrub', need: 700, fx: '💥',
+        label: 'Loose shoe', hint: 'Rub the hammer over the shoe to tap it back on' },
+      { x: -34, y: -58, icon: '🌾', tool: '🪮', toolName: 'Comb', act: 'scrub', need: 1100, fx: '✨',
+        label: 'Tangled mane', hint: 'Comb through the tangled mane again and again' },
+      { x: 122, y: 44,  icon: '🌰', act: 'pull', need: 135,
+        label: 'Burr in tail', hint: 'Grab the prickly burr and pull it out of the tail' },
+      { x: 76,  y: 122, icon: '🐾', tool: '🧽', toolName: 'Sponge', act: 'scrub', need: 800, fx: '🫧',
+        label: 'Muddy hoof', hint: 'Scrub the muddy hoof until it is clean' }
     ],
     foods: [{ e: '🍎', n: 'Apple' }, { e: '🥕', n: 'Carrot' }, { e: '🌾', n: 'Hay' }]
   },
   {
     id: 'chicken', name: 'Chicken', icon: '🐔', wild: false, habitatName: 'the coop',
     colour: 0xE8D9C0, build: buildChicken, habitat: habCoop,
-    scale: 1.05, y: 368,
+    scale: 1.05, y: 368, shadowY: 140, shadowW: 220,
     intro: 'Nugget the chicken has had a rough night in the coop. Time for some TLC.',
     problems: [
-      { x: 52,  y: 4,    icon: '🪶', tool: '🧴', label: 'Bare patch',   hint: 'Tap the bare patch to help her feathers grow' },
-      { x: -12, y: 62,   icon: '🐛', tool: '🧴', label: 'Mites',        hint: 'Tap the mites to dust them away' },
-      { x: 22,  y: 124,  icon: '🧼', tool: '🧽', label: 'Muddy feet',   hint: 'Tap the muddy feet to wash them' },
-      { x: -64, y: -122, icon: '🩹', tool: '🧴', label: 'Pecked comb',  hint: 'Tap the sore comb to dab it better' }
+      { x: 52,  y: 4,    icon: '🌾', act: 'pull', need: 120,
+        label: 'Stuck straw', hint: 'Grab the straw stuck in her feathers and pull it out' },
+      { x: -12, y: 62,   icon: '🐛', tool: '🧂', toolName: 'Mite dust', act: 'scrub', need: 750, fx: '💨',
+        label: 'Mites', hint: 'Rub the mite dust all through her feathers' },
+      { x: 22,  y: 124,  icon: '🧼', tool: '🧽', toolName: 'Sponge', act: 'scrub', need: 800, fx: '🫧',
+        label: 'Muddy feet', hint: 'Scrub her muddy feet until they shine' },
+      { x: -64, y: -122, icon: '🩹', tool: '🧴', toolName: 'Salve', act: 'scrub', need: 500, fx: '✨',
+        label: 'Pecked comb', hint: 'Dab the salve softly on her sore comb' }
     ],
     foods: [{ e: '🌽', n: 'Corn' }, { e: '🫘', n: 'Seeds' }, { e: '🪱', n: 'Worm' }]
   },
   {
     id: 'duck', name: 'Duck', icon: '🦆', wild: false, habitatName: 'the pond',
     colour: 0xFFD95E, build: buildDuck, habitat: habPond,
-    scale: 1.05, y: 376,
+    scale: 1.05, y: 376, shadowY: 138, shadowW: 240,
     intro: 'Puddles the duck got into a sticky mess by the pond. She needs a helper!',
     problems: [
-      { x: 30,  y: 18,  icon: '🛢️', tool: '🧽', label: 'Oily wing',    hint: 'Tap the oily wing to wash the oil off' },
-      { x: -22, y: 106, icon: '🧵', tool: '✂️', label: 'Tangled string', hint: 'Tap the string to snip it off her leg' },
-      { x: 78,  y: 40,  icon: '🦟', tool: '🧴', label: 'Itchy bites',   hint: 'Tap the itchy bites to soothe them' },
-      { x: -92, y: -34, icon: '🩹', tool: '🧴', label: 'Scratched neck', hint: 'Tap the scratch to clean it up' }
+      { x: 30,  y: 18,  icon: '🛢️', tool: '🧽', toolName: 'Sponge', act: 'scrub', need: 1100, fx: '🫧',
+        label: 'Oily wing', hint: 'Scrub and scrub to wash all the oil away' },
+      { x: -22, y: 106, icon: '🧵', act: 'pull', need: 125,
+        label: 'Tangled string', hint: 'Grab the string and pull it off her leg' },
+      { x: 78,  y: 40,  icon: '🦟', tool: '🧴', toolName: 'Cream', act: 'scrub', need: 650, fx: '🫧',
+        label: 'Itchy bites', hint: 'Rub soothing cream on the itchy bites' },
+      { x: -92, y: -34, icon: '🩹', tool: '🩹', toolName: 'Bandage', act: 'scrub', need: 480, fx: '✨',
+        label: 'Scratched neck', hint: 'Dab the bandage gently on the scratch' }
     ],
     foods: [{ e: '🫛', n: 'Peas' }, { e: '🌽', n: 'Sweetcorn' }, { e: '🥬', n: 'Lettuce' }]
+  },
+  {
+    id: 'snake', name: 'Snake', icon: '🐍', wild: true, habitatName: 'the desert',
+    colour: 0x8CBF5E, build: buildSnake, habitat: habDesert,
+    scale: 1, y: 390, shadowY: 128, shadowW: 300,
+    intro: 'Slinky the snake got into a prickly spot in the desert. Be gentle!',
+    problems: [
+      { x: 60,  y: 40,  icon: '🍂', act: 'pull', need: 140,
+        label: 'Stuck shed skin', hint: 'Grab the old shed skin and peel it right off' },
+      { x: -50, y: 90,  icon: '🌵', act: 'pull', need: 130,
+        label: 'Cactus spine', hint: 'Grab the cactus spine and pull it out gently' },
+      { x: 30,  y: -6,  icon: '🏜️', tool: '🧴', toolName: 'Oil', act: 'scrub', need: 800, fx: '✨',
+        label: 'Dry scales', hint: 'Rub the oil all along the dry scales' },
+      { x: -60, y: -40, icon: '🩹', tool: '🧴', toolName: 'Salve', act: 'scrub', need: 550, fx: '🫧',
+        label: 'Scraped neck', hint: 'Dab the salve softly on the scraped neck' }
+    ],
+    foods: [{ e: '🥚', n: 'Egg' }, { e: '🦗', n: 'Cricket' }, { e: '💧', n: 'Water' }]
+  },
+  {
+    id: 'lizard', name: 'Lizard', icon: '🦎', wild: true, habitatName: 'the canyon',
+    colour: 0x5FC08B, build: buildLizard, habitat: habRocks,
+    scale: 1, y: 400, shadowY: 118, shadowW: 330,
+    intro: 'Ziggy the lizard scrambled off the hot rocks with a few ouches.',
+    problems: [
+      { x: 148, y: 10,  icon: '🍂', act: 'pull', need: 130,
+        label: 'Stuck shed on tail', hint: 'Grab the old skin on her tail and peel it off' },
+      { x: -20, y: 34,  icon: '🏜️', tool: '🧴', toolName: 'Lotion', act: 'scrub', need: 750, fx: '✨',
+        label: 'Dry skin', hint: 'Rub the lotion into her dry skin' },
+      { x: 56,  y: 94,  icon: '🩹', tool: '🩹', toolName: 'Bandage', act: 'scrub', need: 500, fx: '✨',
+        label: 'Sore toe', hint: 'Dab the bandage gently on her sore toe' },
+      { x: -70, y: -20, icon: '🌵', act: 'pull', need: 125,
+        label: 'Prickly splinter', hint: 'Grab the splinter and pull it out' }
+    ],
+    foods: [{ e: '🦗', n: 'Cricket' }, { e: '🪰', n: 'Fly' }, { e: '🍓', n: 'Berry' }]
+  },
+  {
+    id: 'frog', name: 'Frog', icon: '🐸', wild: true, habitatName: 'the swamp',
+    colour: 0x6FBF5A, build: buildFrog, habitat: habSwamp,
+    scale: 1.05, y: 388, shadowY: 126, shadowW: 260,
+    intro: 'Croaky the frog hopped out of the swamp feeling dried out and sore.',
+    problems: [
+      { x: 0,   y: 30,  icon: '🏜️', tool: '🚿', toolName: 'Mister', act: 'scrub', need: 900, fx: '💦',
+        label: 'Dried-out skin', hint: 'Spray water all over to keep his skin nice and damp' },
+      { x: -78, y: 72,  icon: '🌿', act: 'pull', need: 135,
+        label: 'Tangled weed', hint: 'Grab the pond weed and pull it off his leg' },
+      { x: 62,  y: 20,  icon: '🩹', tool: '🧴', toolName: 'Salve', act: 'scrub', need: 550, fx: '🫧',
+        label: 'Scratched side', hint: 'Rub the salve softly on the scratch' },
+      { x: 88,  y: 112, icon: '🍂', act: 'pull', need: 120,
+        label: 'Sticky leaf', hint: 'Grab the leaf stuck to his foot and peel it away' }
+    ],
+    foods: [{ e: '🪰', n: 'Fly' }, { e: '🦗', n: 'Cricket' }, { e: '🪱', n: 'Worm' }]
   }
 ];
 const byId = (id) => ANIMALS.filter(a => a.id === id)[0];
@@ -1106,7 +1648,7 @@ function menuBg(parent) {
   const floaters = new PIXI.Container();
   sceneTitle.addChild(floaters);
   const fl = [];
-  ['🐯', '🐬', '🐢', '🐴', '🐔', '🦆', '🐾', '💚', '🐾', '✨'].forEach((e, i) => {
+  ['🐯', '🐬', '🐢', '🐴', '🐔', '🦆', '🐍', '🦎', '🐸', '🐾', '💚', '✨'].forEach((e, i) => {
     const s = emo(e, 26 + (i % 3) * 10);
     s.x = 60 + (i * 97) % (W - 120);
     s.y = 120 + (i * 151) % 420;
@@ -1200,11 +1742,14 @@ let selectCards = [];
   const cardsC = new PIXI.Container();
   sceneSelect.addChild(cardsC);
 
+  // 9 cards: three rows of three, scaled down so everything clears the header and hint
+  const CS = 0.78;
   ANIMALS.forEach((a, i) => {
     const col = i % 3, row = Math.floor(i / 3);
     const card = new PIXI.Container();
     card.x = 200 + col * 280;
-    card.y = 236 + row * 216;
+    card.y = 194 + row * 160;
+    card.scale.set(CS);
 
     const shadow = new PIXI.Graphics();
     shadow.beginFill(0x000000, 0.25).drawRoundedRect(-108, -92, 216, 190, 22).endFill();
@@ -1243,12 +1788,12 @@ let selectCards = [];
     };
 
     card.hitArea = new PIXI.Rectangle(-108, -92, 216, 190);
-    card.on('pointerover', () => { card.scale.set(1.06); });
-    card.on('pointerout', () => { card.scale.set(1); });
+    card.on('pointerover', () => { card.scale.set(CS * 1.08); });
+    card.on('pointerout', () => { card.scale.set(CS); });
     card.on('pointertap', () => {
       if (!isUnlocked(a)) return;
       Sound.click();
-      card.scale.set(1);
+      card.scale.set(CS);
       startGame(a);
     });
 
@@ -1312,9 +1857,10 @@ mouthGlow.visible = false;
 worldC.addChild(habC, animalC, mouthGlow, fxC);
 
 const hudC = new PIXI.Container();
+const toolC = new PIXI.Container();
 const trayC = new PIXI.Container();
 const dragLayer = new PIXI.Container();
-sceneGame.addChild(worldC, hudC, trayC, dragLayer);
+sceneGame.addChild(worldC, toolC, hudC, trayC, dragLayer);
 
 /* ---- HUD ---- */
 const barBG = new PIXI.Graphics();
@@ -1350,7 +1896,10 @@ let cur = null;          // current animal definition
 let curAnimal = null;    // built display container
 let health = 0, shownHealth = 0;
 let markers = [];
+let toolChips = [];
 let foodItems = [];
+let dragTool = null;     // tool chip currently being dragged
+let pulling = null;      // pull-marker currently being dragged
 let finished = false;
 let gameTime = 0;
 let animalBaseY = 0;
@@ -1387,72 +1936,190 @@ function floatText(x, y, str, colour, size) {
   fxC.addChild(s); parts.push(s);
 }
 
-/* ---- problem markers ---- */
+/* ---- problem markers: scrub zones and pull-out objects ---- */
+function markerGlobal(m) {
+  return curAnimal.toGlobal(new PIXI.Point(m.def.x, m.def.y));
+}
+
+function completeProblem(m) {
+  m.done = true;
+  m.active = false;
+  m.eventMode = 'none';
+  m.progress = 0;
+  m.drawProg();
+  m.strain.clear();
+  Sound.heal();
+  const gp = curAnimal.toGlobal(new PIXI.Point(m.x, m.y));
+  burst(gp.x, gp.y, ['✨', '💚', m.def.tool || m.def.icon], 7);
+  floatText(gp.x, gp.y - 34, '+' + PER_PROBLEM, 0x8CF08A);
+  addHealth(PER_PROBLEM);
+  m.fading = 1;
+  if (m.chip) {
+    if (dragTool === m.chip) dragTool = null;
+    returnTool(m.chip);
+  }
+  if (pulling === m) pulling = null;
+  setHint();
+}
+
 function makeMarker(pdef) {
   const c = new PIXI.Container();
   c.x = pdef.x; c.y = pdef.y;
-
-  const ring = new PIXI.Graphics();
-  const glow = new PIXI.Graphics();
-  const icon = emo(pdef.icon, 27);
-  const prog = new PIXI.Graphics();
-  c.addChild(glow, ring, prog, icon);
-
-  glow.beginFill(0xFF5A48, 0.22).drawCircle(0, 0, 34).endFill();
-  ring.beginFill(0xFFFFFF, 0.94).drawCircle(0, 0, 23).endFill();
-  ring.lineStyle({ width: 4, color: 0xE04A38 });
-  ring.drawCircle(0, 0, 23);
-  ring.lineStyle(0);
-
-  c.taps = 0;
   c.def = pdef;
-  c.eventMode = 'static';
-  c.cursor = 'pointer';
-  c.hitArea = new PIXI.Circle(0, 0, 30);
+  c.progress = 0;
+  c.off = { x: 0, y: 0 };
 
-  const drawProg = () => {
+  const glow = new PIXI.Graphics();
+  const strain = new PIXI.Graphics();
+  const ring = new PIXI.Graphics();
+  const ringG = new PIXI.Graphics();
+  const prog = new PIXI.Graphics();
+  const icon = emo(pdef.icon, pdef.act === 'pull' ? 34 : 26);
+  c.addChild(glow, strain, ring, ringG, prog, icon);
+
+  if (pdef.act === 'pull') {
+    glow.beginFill(0xFF5A48, 0.2).drawCircle(0, 0, 38).endFill();
+    ring.beginFill(0xFFFFFF, 0.35).drawCircle(0, 0, 27).endFill();
+    ring.lineStyle({ width: 3.5, color: 0xE04A38, alpha: 0.9 });
+    ring.drawCircle(0, 0, 27);
+    ring.lineStyle(0);
+  } else {
+    glow.beginFill(0xFF5A48, 0.22).drawCircle(0, 0, 35).endFill();
+    ring.beginFill(0xFFFFFF, 0.92).drawCircle(0, 0, 24).endFill();
+    ring.lineStyle({ width: 4, color: 0xE04A38 });
+    ring.drawCircle(0, 0, 24);
+    ring.lineStyle(0);
+    // green "tool is working here" ring, shown while scrubbing
+    ringG.lineStyle({ width: 5, color: 0x5ADB6E, alpha: 0.95 });
+    ringG.drawCircle(0, 0, 29);
+    ringG.lineStyle(0);
+    ringG.visible = false;
+  }
+
+  c.drawProg = () => {
     prog.clear();
-    if (c.taps === 0) return;
+    const f = clamp(c.progress / pdef.need, 0, 1);
+    if (f <= 0) return;
     prog.lineStyle({ width: 5, color: 0x4CC65E, cap: 'round' });
-    prog.arc(0, 0, 28, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (c.taps / TAPS_TO_FIX));
+    prog.arc(0, 0, 32, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * f);
     prog.lineStyle(0);
   };
 
-  c.on('pointertap', () => {
-    if (finished || c.done) return;
-    c.taps++;
-    drawProg();
-    c.shake = 1;
-    if (c.taps >= TAPS_TO_FIX) {
-      c.done = true;
-      c.eventMode = 'none';
-      Sound.heal();
-      const gp = animalC.toGlobal(new PIXI.Point(c.x, c.y));
-      burst(gp.x, gp.y, ['✨', '💚', pdef.tool], 7);
-      floatText(gp.x, gp.y - 34, '+' + PER_PROBLEM, 0x8CF08A);
-      addHealth(PER_PROBLEM);
-      // healed: fade the marker out with a pop
-      c.fading = 1;
-      setHint();
-    } else {
+  c.eventMode = 'static';
+  if (pdef.act === 'pull') {
+    c.cursor = 'grab';
+    c.hitArea = new PIXI.Circle(0, 0, 34);
+    c.on('pointerdown', () => {
+      if (finished || c.done) return;
+      pulling = c;
+      c.snap = 0;
+      c.cursor = 'grabbing';
       Sound.tap();
-      const gp = animalC.toGlobal(new PIXI.Point(c.x, c.y));
-      burst(gp.x, gp.y, [pdef.tool], 2);
-    }
-  });
+      setHint(pdef.hint);
+    });
+  } else {
+    c.cursor = 'default';
+    c.hitArea = new PIXI.Circle(0, 0, 30);
+    // tapping the spot just points the player at the right tool
+    c.on('pointertap', () => {
+      if (finished || c.done) return;
+      Sound.tap();
+      c.shake = 1;
+      if (c.chip) c.chip.wiggle = 1;
+      setHint(pdef.hint);
+    });
+  }
   c.on('pointerover', () => { c.hovered = true; setHint(pdef.hint); });
   c.on('pointerout', () => { c.hovered = false; setHint(); });
 
-  c.ring = ring; c.glow = glow; c.icon = icon;
+  c.ring = ring; c.ringG = ringG; c.glow = glow; c.icon = icon; c.strain = strain;
   return c;
+}
+
+/* ---- tool shelf (for scrub problems) ---- */
+function returnTool(t) {
+  t.scale.set(1);
+  t.cursor = 'grab';
+  t.returning = true;
+}
+
+function makeToolChip(m, idx) {
+  const c = new PIXI.Container();
+  c.homeX = 62; c.homeY = 214 + idx * 96;
+  c.x = c.homeX; c.y = c.homeY;
+
+  const sh = new PIXI.Graphics();
+  sh.beginFill(0x000000, 0.25).drawRoundedRect(-34, -28, 68, 68, 16).endFill();
+  const bg = new PIXI.Graphics();
+  bg.beginFill(0xFFF6E2).drawRoundedRect(-34, -34, 68, 68, 16).endFill();
+  bg.beginFill(0xFFFFFF, 0.5).drawRoundedRect(-30, -30, 60, 26, 12).endFill();
+  bg.lineStyle({ width: 3, color: 0xC98A3E });
+  bg.drawRoundedRect(-34, -34, 68, 68, 16);
+  bg.lineStyle(0);
+  const icon = emo(m.def.tool, 34);
+  const nm = txt(m.def.toolName, 12, 0xFFFFFF, 'bold');
+  nm.anchor.set(0.5); nm.y = 46;
+  nm.style.stroke = 0x2A2318; nm.style.strokeThickness = 4;
+  const check = emo('✅', 22); check.x = 24; check.y = -26; check.visible = false;
+  c.addChild(sh, bg, icon, nm, check);
+  c.check = check; c.icon = icon;
+  c.prob = m; m.chip = c;
+
+  c.eventMode = 'static';
+  c.cursor = 'grab';
+  c.hitArea = new PIXI.Rectangle(-36, -36, 72, 72);
+  c.on('pointerdown', (e) => {
+    if (finished || m.done || c.returning) return;
+    dragTool = c;
+    c.cursor = 'grabbing';
+    dragLayer.addChild(c);
+    c.scale.set(1.15);
+    const p = e.global;
+    c.x = p.x; c.y = p.y;
+    c.lastX = p.x; c.lastY = p.y; c.lastIn = false;
+    c.sinceFx = 0;
+    Sound.tap();
+    setHint(m.def.hint);
+  });
+  c.on('pointerover', () => { if (!m.done) setHint(m.def.hint); });
+  c.on('pointerout', () => setHint());
+  return c;
+}
+
+function buildToolShelf() {
+  toolC.removeChildren();
+  toolChips = [];
+  const scrubs = markers.filter(m => m.def.act !== 'pull');
+  if (!scrubs.length) return;
+  const bg = new PIXI.Graphics();
+  const hgt = scrubs.length * 96 + 40;
+  bg.beginFill(0x4A3320, 0.6).drawRoundedRect(14, 156, 96, hgt, 18).endFill();
+  bg.lineStyle({ width: 3, color: 0xC98A3E, alpha: 0.7 });
+  bg.drawRoundedRect(14, 156, 96, hgt, 18);
+  bg.lineStyle(0);
+  bg.eventMode = 'none';
+  toolC.addChild(bg);
+  const lb = txt('Tools', 15, 0xFFE6B8, 'bold');
+  lb.anchor.set(0.5); lb.x = 62; lb.y = 176;
+  toolC.addChild(lb);
+  scrubs.forEach((m, i) => {
+    const chip = makeToolChip(m, i);
+    toolC.addChild(chip);
+    toolChips.push(chip);
+  });
 }
 
 function setHint(str) {
   if (finished) { hintTag.text = ''; return; }
   if (str) { hintTag.text = str; hintTag.style.fill = 0xFFE68A; return; }
-  const left = markers.filter(m => !m.done).length;
+  const left = markers.filter(m => !m.done);
   const fleft = foodItems.filter(f => !f.eaten).length;
-  if (left > 0) hintTag.text = `Tap the ${left} red spot${left > 1 ? 's' : ''} to treat them`;
+  if (left.length > 0) {
+    const pulls = left.filter(m => m.def.act === 'pull').length;
+    if (pulls === left.length) hintTag.text = 'Grab what is stuck and pull it free! 🤏';
+    else if (pulls > 0) hintTag.text = 'Drag tools to the sore spots — and pull off anything stuck!';
+    else hintTag.text = 'Drag tools from the shelf and rub them on the sore spots 🧰';
+  }
   else if (fleft > 0) hintTag.text = `Now drag the food to ${cur.name.toLowerCase()}'s mouth 🍽️`;
   else hintTag.text = '';
   hintTag.style.fill = 0xFFFFFF;
@@ -1499,11 +2166,72 @@ function makeFood(fdef, idx, total) {
 }
 
 app.stage.on('pointermove', (e) => {
+  const p = e.global;
   foodItems.forEach(f => {
-    if (f.dragging) { f.x = e.global.x; f.y = e.global.y; }
+    if (f.dragging) { f.x = p.x; f.y = p.y; }
   });
+
+  // scrubbing: the tool only works while it is over its problem spot,
+  // and progress comes from how much you actually rub
+  if (dragTool && cur && curAnimal) {
+    dragTool.x = p.x; dragTool.y = p.y;
+    const m = dragTool.prob;
+    if (m && !m.done && !finished) {
+      const mg = markerGlobal(m);
+      const inside = dist(p.x, p.y, mg.x, mg.y) < 90;
+      m.active = inside;
+      if (inside && dragTool.lastIn) {
+        const step = Math.min(dist(p.x, p.y, dragTool.lastX, dragTool.lastY), 40);
+        if (step > 0.5) {
+          m.progress += step;
+          m.drawProg();
+          dragTool.sinceFx += step;
+          if (dragTool.sinceFx > 90) {
+            dragTool.sinceFx = 0;
+            Sound.scrub();
+            burst(p.x, p.y, [m.def.fx || '✨'], 1);
+          }
+          if (m.progress >= m.def.need) completeProblem(m);
+        }
+      }
+      dragTool.lastIn = inside;
+    }
+    dragTool.lastX = p.x; dragTool.lastY = p.y;
+  }
+
+  // pulling: the object stretches toward the pointer with resistance
+  if (pulling && cur && curAnimal) {
+    const m = pulling;
+    const lp = curAnimal.toLocal(new PIXI.Point(p.x, p.y));
+    const dx = lp.x - m.def.x, dy = lp.y - m.def.y;
+    const L = Math.hypot(dx, dy);
+    const ux = L ? dx / L : 0, uy = L ? dy / L : 0;
+    const pull = Math.min(L * 0.65, m.def.need * 1.15);
+    m.off.x = ux * pull; m.off.y = uy * pull;
+    m.progress = pull;
+    m.drawProg();
+    if (pull >= m.def.need) {
+      pulling = null;
+      m.popV = { x: ux * 7, y: uy * 7 - 3 };
+      Sound.pop();
+      completeProblem(m);
+    }
+  }
 });
 function endDrag() {
+  if (dragTool) {
+    const t = dragTool;
+    dragTool = null;
+    if (t.prob) t.prob.active = false;
+    returnTool(t);
+    setHint();
+  }
+  if (pulling) {
+    const m = pulling;
+    pulling = null;
+    if (!m.done) { m.snap = 1; m.cursor = 'grab'; Sound.nope(); }
+    setHint();
+  }
   if (!cur || !curAnimal) return;   // stage-wide handler: menus fire this too
   foodItems.forEach(f => {
     if (!f.dragging) return;
@@ -1563,12 +2291,27 @@ function startGame(a) {
   animalC.removeChildren();
   fxC.removeChildren();
   trayC.removeChildren();
+  toolC.removeChildren();
   dragLayer.removeChildren();
   parts.length = 0;
   markers = [];
+  toolChips = [];
   foodItems = [];
+  dragTool = null;
+  pulling = null;
 
   habC.addChild(a.habitat());
+
+  // soft contact shadow under the animal
+  const shadow = new PIXI.Sprite(softTex);
+  shadow.anchor.set(0.5);
+  shadow.tint = 0x000000;
+  shadow.alpha = a.shadowA || 0.28;
+  shadow.width = (a.shadowW || 280) * a.scale;
+  shadow.height = 54 * a.scale;
+  shadow.x = W / 2;
+  shadow.y = a.y + (a.shadowY || 130) * a.scale;
+  habC.addChild(shadow);
 
   curAnimal = a.build();
   animalC.addChild(curAnimal);
@@ -1584,6 +2327,7 @@ function startGame(a) {
     curAnimal.addChild(m);
     markers.push(m);
   });
+  buildToolShelf();
 
   a.foods.forEach((f, i) => {
     const fi = makeFood(f, i, a.foods.length);
@@ -1649,20 +2393,86 @@ app.ticker.add((d) => {
   markers.forEach((m, i) => {
     if (m.fading) {
       m.fading -= dt * 2.2;
-      m.scale.set(1 + (1 - m.fading) * 0.7);
+      if (m.popV) {
+        // pulled object flies away spinning
+        m.x += m.popV.x * d; m.y += m.popV.y * d;
+        m.popV.y += 0.3 * d;
+        m.rotation += 0.25 * d;
+      } else {
+        m.scale.set(1 + (1 - m.fading) * 0.7);
+      }
       m.alpha = clamp(m.fading, 0, 1);
       if (m.fading <= 0) { m.visible = false; m.fading = 0; }
       return;
     }
     if (m.done) return;
-    const p = 1 + Math.sin(gameTime * 4.4 + i) * 0.09;
-    const hv = m.hovered ? 1.15 : 1;
-    m.scale.set(p * hv);
-    m.glow.alpha = 0.7 + Math.sin(gameTime * 4.4 + i) * 0.3;
-    if (m.shake > 0) {
-      m.shake -= dt * 5;
-      m.x = m.def.x + Math.sin(gameTime * 60) * 4 * m.shake;
-    } else { m.x = m.def.x; }
+
+    if (m.def.act === 'pull') {
+      if (m.snap > 0) {
+        // let go too early: wobble back into place
+        m.snap -= dt * 3;
+        m.off.x *= Math.pow(0.82, d); m.off.y *= Math.pow(0.82, d);
+        m.rotation = Math.sin(gameTime * 40) * 0.2 * Math.max(m.snap, 0);
+        if (m.snap <= 0) {
+          m.snap = 0; m.off.x = 0; m.off.y = 0;
+          m.progress = 0; m.drawProg(); m.rotation = 0;
+        }
+      }
+      m.x = m.def.x + m.off.x;
+      m.y = m.def.y + m.off.y;
+      if (pulling !== m && !m.snap) {
+        m.rotation = Math.sin(gameTime * 2.6 + i) * 0.12;
+        m.scale.set(1 + Math.sin(gameTime * 4.4 + i) * 0.06);
+      }
+      m.glow.alpha = 0.7 + Math.sin(gameTime * 4.4 + i) * 0.3;
+      // strain line back to where it is stuck
+      m.strain.clear();
+      const L = Math.hypot(m.off.x, m.off.y);
+      if (L > 2) {
+        m.strain.lineStyle({ width: Math.max(2, 6 - L * 0.03), color: 0x7A5A3A, alpha: 0.8, cap: 'round' });
+        m.strain.moveTo(-m.off.x, -m.off.y);
+        m.strain.quadraticCurveTo(-m.off.x * 0.5, -m.off.y * 0.5 + 10, 0, 0);
+        m.strain.lineStyle(0);
+      }
+    } else {
+      const p = 1 + Math.sin(gameTime * 4.4 + i) * 0.08;
+      const act = m.active ? 1.22 : (m.hovered ? 1.1 : 1);
+      m.scale.set(p * act);
+      m.glow.alpha = (m.active ? 1 : 0.7) + Math.sin(gameTime * 4.4 + i) * 0.25;
+      m.ringG.visible = !!m.active;
+      if (m.shake > 0) {
+        m.shake -= dt * 5;
+        m.x = m.def.x + Math.sin(gameTime * 60) * 4 * m.shake;
+      } else { m.x = m.def.x; }
+    }
+  });
+
+  // tool chips
+  toolChips.forEach(chip => {
+    if (chip.returning) {
+      const k = clamp(0.22 * d, 0, 1);
+      chip.x = lerp(chip.x, chip.homeX, k);
+      chip.y = lerp(chip.y, chip.homeY, k);
+      if (dist(chip.x, chip.y, chip.homeX, chip.homeY) < 3) {
+        chip.x = chip.homeX; chip.y = chip.homeY;
+        chip.returning = false;
+        toolC.addChild(chip);
+        if (chip.prob.done) {
+          chip.alpha = 0.55;
+          chip.check.visible = true;
+          chip.eventMode = 'none';
+          chip.cursor = 'default';
+        }
+      }
+    }
+    if (chip.wiggle > 0) {
+      chip.wiggle = Math.max(0, chip.wiggle - dt * 1.6);
+      chip.rotation = Math.sin(gameTime * 26) * 0.25 * chip.wiggle;
+    } else if (dragTool === chip && chip.prob.active) {
+      chip.rotation = Math.sin(gameTime * 20) * 0.26;   // scrubbing wobble
+    } else {
+      chip.rotation *= Math.pow(0.85, d);
+    }
   });
 
   // particles
